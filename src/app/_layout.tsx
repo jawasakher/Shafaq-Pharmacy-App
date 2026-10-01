@@ -18,6 +18,8 @@ export default function RootLayout() {
             <Stack screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="medicine-request" />
+                <Stack.Screen name="prescription" />
+                <Stack.Screen name="delivery-location" />
             </Stack>
         </ThemeProvider>
     );

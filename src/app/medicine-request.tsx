@@ -1,3 +1,5 @@
+import { router } from 'expo-router';
+import { useState } from 'react';
 import {
     Pressable,
     ScrollView,
@@ -6,7 +8,6 @@ import {
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -26,11 +27,16 @@ export default function MedicineRequestScreen() {
         setMedicine('');
     };
 
+    const handleContinue = () => {
+        router.push('/prescription');
+    };
+
     return (
         <ThemedView style={styles.container}>
             <SafeAreaView style={styles.safeArea}>
                 <ScrollView
                     showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
                     contentContainerStyle={styles.content}
                 >
                     <View style={styles.header}>
@@ -65,6 +71,8 @@ export default function MedicineRequestScreen() {
 
                         <Pressable
                             onPress={addMedicine}
+                            hitSlop={8}
+                            android_ripple={{ color: '#BDE8EF' }}
                             style={({ pressed }) => [
                                 styles.addButton,
                                 pressed && styles.pressed,
@@ -105,7 +113,9 @@ export default function MedicineRequestScreen() {
                                         style={styles.medicineCard}
                                     >
                                         <View style={styles.medicineIcon}>
-                                            <ThemedText style={styles.medicineIconText}>
+                                            <ThemedText
+                                                style={styles.medicineIconText}
+                                            >
                                                 +
                                             </ThemedText>
                                         </View>
@@ -120,6 +130,7 @@ export default function MedicineRequestScreen() {
                     </View>
 
                     <Pressable
+                        onPress={handleContinue}
                         style={({ pressed }) => [
                             styles.continueButton,
                             pressed && styles.pressed,
@@ -211,7 +222,7 @@ const styles = StyleSheet.create({
     },
 
     addButton: {
-        minHeight: 50,
+        minHeight: 52,
         marginTop: 12,
         borderRadius: 16,
         alignItems: 'center',
@@ -219,6 +230,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#D7F3F7',
         borderWidth: 1,
         borderColor: '#9DDFE9',
+        elevation: 1,
     },
 
     addButtonText: {
