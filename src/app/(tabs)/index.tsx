@@ -1,4 +1,5 @@
-import { StyleSheet, Pressable, View, ScrollView } from 'react-native';
+import { router } from 'expo-router';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -63,6 +64,7 @@ export default function HomeScreen() {
 
               {/* Order Medicine */}
               <Pressable
+                  onPress={() => router.push('/medicine-request')}
                   style={({ pressed }) => [
                     styles.primaryButton,
                     pressed && styles.buttonPressed,
@@ -91,6 +93,7 @@ export default function HomeScreen() {
 
               {/* Consultation */}
               <Pressable
+                  onPress={() => router.push('/consultation')}
                   style={({ pressed }) => [
                     styles.secondaryButton,
                     pressed && styles.buttonPressed,
