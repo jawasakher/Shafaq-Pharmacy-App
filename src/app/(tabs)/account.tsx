@@ -19,6 +19,7 @@ export default function AccountScreen() {
             title: 'عناويني',
             subtitle: 'إدارة عناوين التوصيل',
             icon: '⌖',
+            onPress: () => router.push('/addresses'),
         },
         {
             title: 'الإشعارات',
