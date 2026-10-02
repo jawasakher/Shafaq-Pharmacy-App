@@ -23,8 +23,9 @@ export default function AccountScreen() {
         },
         {
             title: 'الإشعارات',
-            subtitle: 'إدارة تنبيهات التطبيق',
-            icon: '○',
+            subtitle: 'متابعة آخر التحديثات والتنبيهات',
+            icon: '♧',
+            onPress: () => router.push('/notifications'),
         },
         {
             title: 'الخصوصية والأمان',
