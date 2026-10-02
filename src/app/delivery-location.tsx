@@ -1,4 +1,6 @@
+
 import { router } from 'expo-router';
+import * as Location from 'expo-location';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -6,8 +8,36 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
 export default function DeliveryLocationScreen() {
-    const handleContinue = () => {
-        router.push('/pharmacies');
+    const handleContinue = async () => {
+        try {
+            const { status } =
+                await Location.requestForegroundPermissionsAsync();
+
+            if (status !== 'granted') {
+                return;
+            }
+
+            const location = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.High,
+            });
+
+            const { latitude, longitude } = location.coords;
+
+            console.log('Shafaq user location:', {
+                latitude,
+                longitude,
+            });
+
+            router.push({
+                pathname: '/pharmacies',
+                params: {
+                    latitude: latitude.toString(),
+                    longitude: longitude.toString(),
+                },
+            });
+        } catch (error) {
+            console.error('Location error:', error);
+        }
     };
 
     return (
