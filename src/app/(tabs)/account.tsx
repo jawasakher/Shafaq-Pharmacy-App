@@ -29,8 +29,9 @@ export default function AccountScreen() {
         },
         {
             title: 'الخصوصية والأمان',
-            subtitle: 'إعدادات الحساب والخصوصية',
-            icon: '◇',
+            subtitle: 'إدارة خصوصية حسابك وأمان بياناتك',
+            icon: '♙',
+            onPress: () => router.push('/privacy-security'),
         },
         {
             title: 'المساعدة والدعم',
