@@ -6,21 +6,28 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
 export default function DeliveryLocationScreen() {
+    const handleContinue = () => {
+        router.push('/pharmacies');
+    };
+
     return (
         <ThemedView style={styles.container}>
             <SafeAreaView style={styles.safeArea}>
                 <View style={styles.content}>
-                    <ThemedText style={styles.eyebrow}>
-                        الخطوة التالية
-                    </ThemedText>
 
-                    <ThemedText style={styles.title}>
-                        أين تريد استلام طلبك؟
-                    </ThemedText>
+                    <View style={styles.header}>
+                        <ThemedText style={styles.eyebrow}>
+                            الخطوة التالية
+                        </ThemedText>
 
-                    <ThemedText style={styles.subtitle}>
-                        سنستخدم موقعك الحالي لتحديد الصيدليات المتاحة للتوصيل إليك
-                    </ThemedText>
+                        <ThemedText style={styles.title}>
+                            أين تريد استلام طلبك؟
+                        </ThemedText>
+
+                        <ThemedText style={styles.subtitle}>
+                            سنستخدم موقعك الحالي لتحديد الصيدليات المتاحة للتوصيل إليك
+                        </ThemedText>
+                    </View>
 
                     <View style={styles.locationCard}>
                         <View style={styles.icon}>
@@ -39,7 +46,8 @@ export default function DeliveryLocationScreen() {
                     </View>
 
                     <Pressable
-                        onPress={() => router.push('/pharmacies')}
+                        onPress={handleContinue}
+                        hitSlop={8}
                         style={({ pressed }) => [
                             styles.button,
                             pressed && styles.pressed,
@@ -53,6 +61,7 @@ export default function DeliveryLocationScreen() {
                             ←
                         </ThemedText>
                     </Pressable>
+
                 </View>
             </SafeAreaView>
         </ThemedView>
@@ -73,6 +82,10 @@ const styles = StyleSheet.create({
         flex: 1,
         paddingHorizontal: 20,
         paddingTop: 30,
+    },
+
+    header: {
+        alignItems: 'flex-end',
     },
 
     eyebrow: {
@@ -166,6 +179,10 @@ const styles = StyleSheet.create({
 
     pressed: {
         opacity: 0.78,
-        transform: [{ scale: 0.985 }],
+        transform: [
+            {
+                scale: 0.985,
+            },
+        ],
     },
 });
