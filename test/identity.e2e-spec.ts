@@ -5,6 +5,8 @@ import { App } from 'supertest/types.js';
 import { AppModule } from '../src/app.module.js';
 import { TestOtpDeliveryService } from '../src/identity/test-otp-delivery.service.js';
 import { OTP_DELIVERY } from '../src/identity/otp-delivery.port.js';
+import { AuthSessionService } from '../src/identity/auth-session.service.js';
+import { PrismaService } from '../src/prisma/prisma.service.js';
 
 describe('Identity authentication (e2e)', () => {
   let app: INestApplication<App>;
@@ -13,6 +15,8 @@ describe('Identity authentication (e2e)', () => {
   const nextTestPhone = () =>
     `+963991${Date.now().toString().slice(-6)}${++phoneSequence}`;
   let otpDelivery: TestOtpDeliveryService;
+  let prisma: PrismaService;
+  let sessions: AuthSessionService;
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -25,6 +29,8 @@ describe('Identity authentication (e2e)', () => {
     app = moduleFixture.createNestApplication();
     await app.init();
     otpDelivery = app.get<TestOtpDeliveryService>(OTP_DELIVERY);
+    prisma = app.get(PrismaService);
+    sessions = app.get(AuthSessionService);
   });
 
   afterEach(async () => {
@@ -160,6 +166,29 @@ describe('Identity authentication (e2e)', () => {
 
     const statuses = results.map((result) => result.status).sort();
     expect(statuses).toEqual([201, 409]);
+  });
+
+  it('creates an internal session and enforces its session type', async () => {
+    const phone = nextTestPhone();
+
+    const user = await prisma.user.create({
+      data: {
+        phone,
+        role: 'ADMIN',
+      },
+    });
+
+    const session = await sessions.createInternalSession(user.id);
+    const authenticated = await sessions.authenticate(session.token, 'INTERNAL');
+
+    expect(authenticated.id).toBe(user.id);
+    expect(authenticated.role).toBe('ADMIN');
+
+    await expect(
+      sessions.authenticate(session.token, 'CUSTOMER'),
+    ).rejects.toThrow('Invalid or expired session');
+
+    await prisma.user.delete({ where: { id: user.id } });
   });
 
 });
