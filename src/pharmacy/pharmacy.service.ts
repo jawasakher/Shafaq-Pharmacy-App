@@ -8,6 +8,10 @@ export class PharmacyService {
 
     async findAll() {
         return this.prisma.pharmacy.findMany({
+            where: {
+                approvalStatus: 'APPROVED',
+                operationalStatus: 'OPEN',
+            },
             orderBy: {
                 name: 'asc',
             },
