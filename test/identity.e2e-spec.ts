@@ -80,4 +80,82 @@ describe('Identity authentication (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(401);
   });
+
+  it('rejects a second OTP request while the first OTP is still valid', async () => {
+    const phone = '+963991234568';
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/otp/request')
+      .set('x-device-id', 'e2e-device-valid-otp')
+      .send({ phone })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/otp/request')
+      .set('x-device-id', 'e2e-device-valid-otp-2')
+      .send({ phone })
+      .expect(409);
+  });
+
+  it('rejects an incorrect OTP and blocks verification after five failed attempts', async () => {
+    const phone = '+963991234569';
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/otp/request')
+      .set('x-device-id', 'e2e-device-attempts')
+      .send({ phone })
+      .expect(201);
+
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/otp/verify')
+        .send({ phone, code: '000000' })
+        .expect(attempt === 5 ? 401 : 401);
+    }
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/otp/verify')
+      .send({ phone, code: '000000' })
+      .expect(429);
+  });
+
+  it('does not allow the same OTP to be consumed twice', async () => {
+    const phone = '+963991234570';
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/otp/request')
+      .set('x-device-id', 'e2e-device-replay')
+      .send({ phone })
+      .expect(201);
+
+    const code = otpDelivery.getCode(phone);
+    expect(code).toMatch(/^\\d{6}$/);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/otp/verify')
+      .send({ phone, code })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/otp/verify')
+      .send({ phone, code })
+      .expect(401);
+  });
+
+  it('allows only one concurrent OTP request for the same phone', async () => {
+    const phone = '+963991234571';
+
+    const results = await Promise.all(
+      [1, 2].map((index) =>
+        request(app.getHttpServer())
+          .post('/api/v1/auth/otp/request')
+          .set('x-device-id', `e2e-device-race-${index}`)
+          .send({ phone }),
+      ),
+    );
+
+    const statuses = results.map((result) => result.status).sort();
+    expect(statuses).toEqual([201, 409]);
+  });
+
 });
