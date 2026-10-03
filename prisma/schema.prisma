@@ -1,4 +1,3 @@
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,10 +6,41 @@ datasource db {
   provider = "postgresql"
 }
 
+enum UserRole {
+  CUSTOMER
+  PHARMACIST
+  DRIVER
+  ADMIN
+}
+
+enum PharmacyStatus {
+  OPEN
+  CLOSED
+}
+
 model User {
   id        String   @id @default(uuid())
   phone     String   @unique
   name      String?
+  role      UserRole @default(CUSTOMER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pharmacy Pharmacy?
+}
+
+model Pharmacy {
+  id        String         @id @default(uuid())
+  name      String
+  phone     String?
+  address   String?
+  latitude  Decimal        @db.Decimal(10, 7)
+  longitude Decimal        @db.Decimal(10, 7)
+  status    PharmacyStatus @default(CLOSED)
+
+  pharmacistId String @unique
+  pharmacist   User   @relation(fields: [pharmacistId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
