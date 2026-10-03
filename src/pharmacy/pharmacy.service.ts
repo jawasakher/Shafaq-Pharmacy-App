@@ -18,7 +18,8 @@ export class PharmacyService {
                 address: true,
                 latitude: true,
                 longitude: true,
-                status: true,
+                approvalStatus: true,
+                operationalStatus: true,
             },
         });
     }

@@ -6,41 +6,181 @@ datasource db {
   provider = "postgresql"
 }
 
+// ============================================================
+// ENUMS
+// ============================================================
+
 enum UserRole {
   CUSTOMER
+  OWNER
   PHARMACIST
   DRIVER
   ADMIN
 }
 
-enum PharmacyStatus {
+enum PharmacyApprovalStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum PharmacyOperationalStatus {
   OPEN
   CLOSED
 }
 
-model User {
-  id        String   @id @default(uuid())
-  phone     String   @unique
-  name      String?
-  role      UserRole @default(CUSTOMER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  pharmacy Pharmacy?
+enum PharmacyMemberRole {
+  OWNER
+  PHARMACIST
 }
 
-model Pharmacy {
-  id        String         @id @default(uuid())
-  name      String
-  phone     String?
-  address   String?
-  latitude  Decimal        @db.Decimal(10, 7)
-  longitude Decimal        @db.Decimal(10, 7)
-  status    PharmacyStatus @default(CLOSED)
+enum PharmacyMemberStatus {
+  ACTIVE
+  INACTIVE
+}
 
-  pharmacistId String @unique
-  pharmacist   User   @relation(fields: [pharmacistId], references: [id])
+enum DriverApprovalStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum DriverAvailabilityStatus {
+  OFFLINE
+  AVAILABLE
+  BUSY
+}
+
+enum AddressType {
+  HOME
+  WORK
+  OTHER
+}
+
+// ============================================================
+// USER
+// ============================================================
+
+model User {
+  id    String   @id @default(uuid())
+  phone String   @unique
+  name  String?
+  role  UserRole @default(CUSTOMER)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Pharmacy memberships
+  pharmacyMemberships PharmacyMember[]
+
+  // Driver profile
+  driverProfile Driver?
+
+  // Customer addresses
+  addresses Address[]
+
+  @@index([role])
+}
+
+// ============================================================
+// ADDRESS
+// ============================================================
+
+model Address {
+  id String @id @default(uuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type      AddressType @default(HOME)
+  label     String?
+  address   String
+  latitude  Decimal     @db.Decimal(10, 7)
+  longitude Decimal     @db.Decimal(10, 7)
+
+  isDefault Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, isDefault])
+}
+
+// ============================================================
+// PHARMACY
+// ============================================================
+
+model Pharmacy {
+  id String @id @default(uuid())
+
+  name  String
+  phone String?
+
+  address   String?
+  latitude  Decimal @db.Decimal(10, 7)
+  longitude Decimal @db.Decimal(10, 7)
+
+  // Administrative approval state
+  approvalStatus PharmacyApprovalStatus @default(PENDING_APPROVAL)
+
+  // Operational state
+  operationalStatus PharmacyOperationalStatus @default(CLOSED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members PharmacyMember[]
+
+  @@index([approvalStatus])
+  @@index([operationalStatus])
+  @@index([approvalStatus, operationalStatus])
+}
+
+// ============================================================
+// PHARMACY MEMBERSHIP
+// ============================================================
+
+model PharmacyMember {
+  id String @id @default(uuid())
+
+  pharmacyId String
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  role   PharmacyMemberRole
+  status PharmacyMemberStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([pharmacyId, userId])
+  @@index([pharmacyId, role, status])
+  @@index([userId, role, status])
+}
+
+// ============================================================
+// DRIVER
+// ============================================================
+
+model Driver {
+  id String @id @default(uuid())
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  approvalStatus DriverApprovalStatus @default(PENDING_APPROVAL)
+
+  availabilityStatus DriverAvailabilityStatus @default(OFFLINE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([approvalStatus])
+  @@index([availabilityStatus])
+  @@index([approvalStatus, availabilityStatus])
 }
