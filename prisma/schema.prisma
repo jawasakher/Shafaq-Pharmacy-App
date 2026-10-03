@@ -59,6 +59,11 @@ enum AddressType {
   OTHER
 }
 
+enum SessionType {
+  CUSTOMER
+  INTERNAL
+}
+
 // ============================================================
 // USER
 // ============================================================
@@ -72,16 +77,53 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Pharmacy memberships
   pharmacyMemberships PharmacyMember[]
-
-  // Driver profile
-  driverProfile Driver?
-
-  // Customer addresses
-  addresses Address[]
+  driverProfile       Driver?
+  addresses           Address[]
+  sessions            AuthSession[]
 
   @@index([role])
+}
+
+// ============================================================
+// AUTHENTICATION
+// ============================================================
+
+model OtpChallenge {
+  id String @id @default(uuid())
+
+  phoneHash String
+  codeHash  String
+
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  consumedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([phoneHash, createdAt])
+  @@index([expiresAt])
+}
+
+model AuthSession {
+  id String @id @default(uuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type SessionType
+
+  tokenHash String @unique
+
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, type])
+  @@index([expiresAt])
+  @@index([revokedAt])
 }
 
 // ============================================================
@@ -123,10 +165,7 @@ model Pharmacy {
   latitude  Decimal @db.Decimal(10, 7)
   longitude Decimal @db.Decimal(10, 7)
 
-  // Administrative approval state
-  approvalStatus PharmacyApprovalStatus @default(PENDING_APPROVAL)
-
-  // Operational state
+  approvalStatus   PharmacyApprovalStatus   @default(PENDING_APPROVAL)
   operationalStatus PharmacyOperationalStatus @default(CLOSED)
 
   createdAt DateTime @default(now())
@@ -173,8 +212,7 @@ model Driver {
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  approvalStatus DriverApprovalStatus @default(PENDING_APPROVAL)
-
+  approvalStatus    DriverApprovalStatus    @default(PENDING_APPROVAL)
   availabilityStatus DriverAvailabilityStatus @default(OFFLINE)
 
   createdAt DateTime @default(now())
