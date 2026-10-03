@@ -1,14 +1,15 @@
 import {
   ConflictException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
-  TooManyRequestsException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { createHash, randomInt } from 'node:crypto';
 
 import { PrismaService } from '../prisma/prisma.service.js';
-import { OtpDeliveryPort, OTP_DELIVERY } from './otp-delivery.port.js';
+import { type OtpDeliveryPort, OTP_DELIVERY } from './otp-delivery.port.js';
 import { PhoneNormalizerService } from './phone-normalizer.service.js';
 
 const OTP_TTL_MS = 5 * 60 * 1000;
@@ -90,7 +91,10 @@ export class OtpService {
     }
 
     if (challenge.attempts >= MAX_ATTEMPTS) {
-      throw new TooManyRequestsException('Too many OTP attempts');
+      throw new HttpException(
+        'Too many OTP attempts',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
 
     const codeHash = this.hash(code);
@@ -106,7 +110,10 @@ export class OtpService {
       });
 
       if (result.count === 0) {
-        throw new TooManyRequestsException('Too many OTP attempts');
+        throw new HttpException(
+          'Too many OTP attempts',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
       }
 
       throw new UnauthorizedException('Invalid or expired OTP');
