@@ -8,15 +8,27 @@ export class AuthSessionService {
   constructor(private readonly prisma: PrismaService) {}
 
   async createCustomerSession(userId: string) {
+    return this.createSession(userId, 'CUSTOMER', 30 * 24 * 60 * 60 * 1000);
+  }
+
+  async createInternalSession(userId: string) {
+    return this.createSession(userId, 'INTERNAL', 8 * 60 * 60 * 1000);
+  }
+
+  private async createSession(
+    userId: string,
+    type: 'CUSTOMER' | 'INTERNAL',
+    lifetimeMs: number,
+  ) {
     const rawToken = randomBytes(32).toString('base64url');
     const tokenHash = this.hash(rawToken);
 
     const session = await this.prisma.authSession.create({
       data: {
         userId,
-        type: 'CUSTOMER',
+        type,
         tokenHash,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        expiresAt: new Date(Date.now() + lifetimeMs),
       },
     });
 
@@ -27,7 +39,7 @@ export class AuthSessionService {
     };
   }
 
-  async authenticate(token: string) {
+  async authenticate(token: string, expectedType?: 'CUSTOMER' | 'INTERNAL') {
     const tokenHash = this.hash(token);
 
     const session = await this.prisma.authSession.findUnique({
@@ -37,6 +49,7 @@ export class AuthSessionService {
 
     if (
       !session ||
+      (expectedType && session.type !== expectedType) ||
       session.revokedAt ||
       session.expiresAt <= new Date()
     ) {
