@@ -8,6 +8,10 @@ import { OTP_DELIVERY } from '../src/identity/otp-delivery.port.js';
 
 describe('Identity authentication (e2e)', () => {
   let app: INestApplication<App>;
+  let phoneSequence = 0;
+
+  const nextTestPhone = () =>
+    `+963991${Date.now().toString().slice(-6)}${++phoneSequence}`;
   let otpDelivery: TestOtpDeliveryService;
 
   beforeEach(async () => {
@@ -28,7 +32,7 @@ describe('Identity authentication (e2e)', () => {
   });
 
   it('completes OTP login, reads /me, and revokes the session on logout', async () => {
-    const phone = '+963991234567';
+    const phone = nextTestPhone();
 
     await request(app.getHttpServer())
       .post('/api/v1/auth/otp/request')
@@ -82,7 +86,7 @@ describe('Identity authentication (e2e)', () => {
   });
 
   it('rejects a second OTP request while the first OTP is still valid', async () => {
-    const phone = '+963991234568';
+    const phone = nextTestPhone();
 
     await request(app.getHttpServer())
       .post('/api/v1/auth/otp/request')
@@ -98,7 +102,7 @@ describe('Identity authentication (e2e)', () => {
   });
 
   it('rejects an incorrect OTP and blocks verification after five failed attempts', async () => {
-    const phone = '+963991234569';
+    const phone = nextTestPhone();
 
     await request(app.getHttpServer())
       .post('/api/v1/auth/otp/request')
@@ -120,7 +124,7 @@ describe('Identity authentication (e2e)', () => {
   });
 
   it('does not allow the same OTP to be consumed twice', async () => {
-    const phone = '+963991234570';
+    const phone = nextTestPhone();
 
     await request(app.getHttpServer())
       .post('/api/v1/auth/otp/request')
@@ -129,7 +133,7 @@ describe('Identity authentication (e2e)', () => {
       .expect(201);
 
     const code = otpDelivery.getCode(phone);
-    expect(code).toMatch(/^\\d{6}$/);
+    expect(code).toMatch(/^\d{6}$/);
 
     await request(app.getHttpServer())
       .post('/api/v1/auth/otp/verify')
@@ -143,7 +147,7 @@ describe('Identity authentication (e2e)', () => {
   });
 
   it('allows only one concurrent OTP request for the same phone', async () => {
-    const phone = '+963991234571';
+    const phone = nextTestPhone();
 
     const results = await Promise.all(
       [1, 2].map((index) =>
