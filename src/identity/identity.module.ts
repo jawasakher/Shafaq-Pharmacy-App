@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../prisma/prisma.module.js';
+import { AuthRateLimitService } from './auth-rate-limit.service.js';
 import { AuthSessionService } from './auth-session.service.js';
 import { IdentityController } from './identity.controller.js';
 import { IdentityGuard } from './identity.guard.js';
@@ -13,6 +14,7 @@ import { PhoneNormalizerService } from './phone-normalizer.service.js';
   imports: [PrismaModule],
   controllers: [IdentityController],
   providers: [
+    AuthRateLimitService,
     AuthSessionService,
     IdentityGuard,
     OtpService,
