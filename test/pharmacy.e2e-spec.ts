@@ -4,42 +4,84 @@ import request from 'supertest';
 import { App } from 'supertest/types.js';
 
 import { AppModule } from '../src/app.module.js';
+import { OTP_DELIVERY } from '../src/identity/otp-delivery.port.js';
+import { TestOtpDeliveryService } from '../src/identity/test-otp-delivery.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 
-describe('Pharmacy discovery (e2e)', () => {
+describe('Pharmacy API (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
-  const testRun = Date.now();
-  const testNames = [
-    `E2E Approved Open ${testRun}`,
-    `E2E Approved Closed ${testRun}`,
-    `E2E Pending Open ${testRun}`,
-    `E2E Rejected Open ${testRun}`,
-    `E2E Suspended Open ${testRun}`,
-  ];
+  let otpDelivery: TestOtpDeliveryService;
+  let phoneSequence = 0;
+
+  const nextTestPhone = () =>
+    `+963991${Date.now().toString().slice(-6)}${++phoneSequence}`;
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(OTP_DELIVERY)
+      .useClass(TestOtpDeliveryService)
+      .compile();
 
     app = moduleFixture.createNestApplication();
     await app.init();
     prisma = app.get(PrismaService);
+    otpDelivery = app.get<TestOtpDeliveryService>(OTP_DELIVERY);
   });
 
   afterEach(async () => {
     await prisma.pharmacy.deleteMany({
       where: {
         name: {
-          in: testNames,
+          startsWith: 'E2E Pharmacy ',
         },
       },
     });
+
+    await prisma.user.deleteMany({
+      where: {
+        phone: {
+          startsWith: '+963991',
+        },
+      },
+    });
+
     await app.close();
   });
 
+  async function authenticateCustomer(phone = nextTestPhone()) {
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/otp/request')
+      .set('x-device-id', `e2e-pharmacy-${phone}`)
+      .send({ phone })
+      .expect(201);
+
+    const code = otpDelivery.getCode(phone);
+    expect(code).toMatch(/^\d{6}$/);
+
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/auth/otp/verify')
+      .send({ phone, code })
+      .expect(201);
+
+    return {
+      phone,
+      userId: response.body.data.user.id as string,
+      token: response.body.data.session.token as string,
+    };
+  }
+
   it('returns only pharmacies that are approved and open', async () => {
+    const testNames = [
+      `E2E Pharmacy Approved Open ${Date.now()}`,
+      `E2E Pharmacy Approved Closed ${Date.now()}`,
+      `E2E Pharmacy Pending Closed ${Date.now()}`,
+      `E2E Pharmacy Rejected Closed ${Date.now()}`,
+      `E2E Pharmacy Suspended Closed ${Date.now()}`,
+    ];
+
     await prisma.pharmacy.createMany({
       data: [
         {
@@ -91,5 +133,76 @@ describe('Pharmacy discovery (e2e)', () => {
         operationalStatus: 'OPEN',
       }),
     ]);
+
+    await prisma.pharmacy.deleteMany({
+      where: {
+        name: {
+          in: testNames,
+        },
+      },
+    });
+  });
+
+  it('requires authentication to submit a pharmacy application', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/pharmacies/applications')
+      .send({
+        name: 'E2E Pharmacy Unauthorized',
+        address: 'Latakia',
+        latitude: 35.5,
+        longitude: 35.78,
+      })
+      .expect(401);
+  });
+
+  it('creates a pending closed pharmacy and an active OWNER membership atomically', async () => {
+    const { token, userId } = await authenticateCustomer();
+
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/pharmacies/applications')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'E2E Pharmacy Registration',
+        phone: '+963911234567',
+        address: 'Latakia',
+        latitude: 35.514,
+        longitude: 35.78,
+      })
+      .expect(201);
+
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.approvalStatus).toBe('PENDING_APPROVAL');
+    expect(response.body.data.operationalStatus).toBe('CLOSED');
+    expect(response.body.data.members).toEqual([
+      {
+        role: 'OWNER',
+        status: 'ACTIVE',
+      },
+    ]);
+
+    const pharmacyId = response.body.data.id as string;
+
+    const pharmacy = await prisma.pharmacy.findUnique({
+      where: { id: pharmacyId },
+      include: {
+        members: {
+          where: { userId },
+        },
+      },
+    });
+
+    expect(pharmacy).not.toBeNull();
+    expect(pharmacy?.approvalStatus).toBe('PENDING_APPROVAL');
+    expect(pharmacy?.operationalStatus).toBe('CLOSED');
+    expect(pharmacy?.members).toHaveLength(1);
+    expect(pharmacy?.members[0].role).toBe('OWNER');
+    expect(pharmacy?.members[0].status).toBe('ACTIVE');
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+
+    expect(user?.role).toBe('OWNER');
   });
 });
