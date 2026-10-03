@@ -13,6 +13,7 @@ describe('Pharmacy API (e2e)', () => {
   let prisma: PrismaService;
   let otpDelivery: TestOtpDeliveryService;
   let phoneSequence = 0;
+  const createdUserIds = new Set<string>();
 
   const nextTestPhone = () =>
     `+963991${Date.now().toString().slice(-6)}${++phoneSequence}`;
@@ -40,13 +41,16 @@ describe('Pharmacy API (e2e)', () => {
       },
     });
 
-    await prisma.user.deleteMany({
-      where: {
-        phone: {
-          startsWith: '+963991',
+    if (createdUserIds.size > 0) {
+      await prisma.user.deleteMany({
+        where: {
+          id: {
+            in: [...createdUserIds],
+          },
         },
-      },
-    });
+      });
+      createdUserIds.clear();
+    }
 
     await app.close();
   });
@@ -66,9 +70,12 @@ describe('Pharmacy API (e2e)', () => {
       .send({ phone, code })
       .expect(201);
 
+    const userId = response.body.data.user.id as string;
+    createdUserIds.add(userId);
+
     return {
       phone,
-      userId: response.body.data.user.id as string,
+      userId,
       token: response.body.data.session.token as string,
     };
   }
