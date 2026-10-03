@@ -16,6 +16,12 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
+  it('identity route is mounted', async () => {
+    await request(app.getHttpServer())
+      .get('/api/v1/me')
+      .expect(401);
+  });
+
   it('/ (GET)', () => {
     return request(app.getHttpServer())
       .get('/')
