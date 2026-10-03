@@ -1,4 +1,8 @@
-import { Injectable, TooManyRequestsException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+} from '@nestjs/common';
 
 type Bucket = {
   count: number;
@@ -41,8 +45,9 @@ export class AuthRateLimitService {
     }
 
     if (current.count >= limit) {
-      throw new TooManyRequestsException(
+      throw new HttpException(
         'Too many OTP requests. Please try again later.',
+        HttpStatus.TOO_MANY_REQUESTS,
       );
     }
 
