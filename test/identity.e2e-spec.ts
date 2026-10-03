@@ -20,7 +20,7 @@ describe('Identity authentication (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     await app.init();
-    otpDelivery = app.get(TestOtpDeliveryService);
+    otpDelivery = app.get<TestOtpDeliveryService>(OTP_DELIVERY);
   });
 
   afterEach(async () => {
