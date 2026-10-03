@@ -8,6 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { AuthRateLimitService } from './auth-rate-limit.service.js';
 import { AuthSessionService } from './auth-session.service.js';
 import { IdentityGuard } from './identity.guard.js';
 import { OtpService } from './otp.service.js';
@@ -17,12 +18,21 @@ import { PrismaService } from '../prisma/prisma.service.js';
 export class IdentityController {
   constructor(
     private readonly otp: OtpService,
+    private readonly rateLimit: AuthRateLimitService,
     private readonly sessions: AuthSessionService,
     private readonly prisma: PrismaService,
   ) {}
 
   @Post('auth/otp/request')
-  async requestOtp(@Body() body: { phone: string }) {
+  async requestOtp(
+    @Body() body: { phone: string },
+    @Req() request: { ip?: string; headers: Record<string, string | string[] | undefined> },
+  ) {
+    const deviceIdHeader = request.headers['x-device-id'];
+    const deviceId = Array.isArray(deviceIdHeader) ? deviceIdHeader[0] : deviceIdHeader;
+
+    this.rateLimit.consumeOtpRequest(body.phone, request.ip ?? '', deviceId);
+
     return {
       success: true,
       data: await this.otp.requestOtp(body.phone),
