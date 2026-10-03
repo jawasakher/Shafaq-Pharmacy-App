@@ -93,6 +93,7 @@ model OtpChallenge {
   id String @id @default(uuid())
 
   phoneHash String
+  activeKey String? @unique
   codeHash  String
 
   expiresAt DateTime
