@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+    BadRequestException,
+    Injectable,
+    NotFoundException,
+} from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -59,26 +63,33 @@ export class PharmacyService {
     }
 
     async approveApplication(pharmacyId: string) {
-        return this.transitionApproval(pharmacyId, 'PENDING_APPROVAL', 'APPROVED');
+        return this.transitionApproval(
+            pharmacyId,
+            'PENDING_APPROVAL',
+            'APPROVED',
+        );
     }
 
     async rejectApplication(pharmacyId: string) {
-        return this.transitionApproval(pharmacyId, 'PENDING_APPROVAL', 'REJECTED');
+        return this.transitionApproval(
+            pharmacyId,
+            'PENDING_APPROVAL',
+            'REJECTED',
+        );
     }
 
     async suspendPharmacy(pharmacyId: string) {
-        return this.transitionApproval(pharmacyId, 'APPROVED', 'SUSPENDED');
+        return this.transitionApproval(
+            pharmacyId,
+            'APPROVED',
+            'SUSPENDED',
+        );
     }
 
     private async transitionApproval(
         pharmacyId: string,
-        expectedStatus:
-            | 'PENDING_APPROVAL'
-            | 'APPROVED',
-        nextStatus:
-            | 'APPROVED'
-            | 'REJECTED'
-            | 'SUSPENDED',
+        expectedStatus: 'PENDING_APPROVAL' | 'APPROVED',
+        nextStatus: 'APPROVED' | 'REJECTED' | 'SUSPENDED',
     ) {
         const result = await this.prisma.pharmacy.updateMany({
             where: {
@@ -88,15 +99,22 @@ export class PharmacyService {
             data: {
                 approvalStatus: nextStatus,
                 ...(nextStatus === 'SUSPENDED'
-                    ? { operationalStatus: 'CLOSED' }
+                    ? {
+                        operationalStatus: 'CLOSED',
+                    }
                     : {}),
             },
         });
 
         if (result.count === 0) {
             const pharmacy = await this.prisma.pharmacy.findUnique({
-                where: { id: pharmacyId },
-                select: { id: true, approvalStatus: true },
+                where: {
+                    id: pharmacyId,
+                },
+                select: {
+                    id: true,
+                    approvalStatus: true,
+                },
             });
 
             if (!pharmacy) {
@@ -109,7 +127,9 @@ export class PharmacyService {
         }
 
         return this.prisma.pharmacy.findUniqueOrThrow({
-            where: { id: pharmacyId },
+            where: {
+                id: pharmacyId,
+            },
             select: {
                 id: true,
                 name: true,
@@ -164,8 +184,12 @@ export class PharmacyService {
             });
 
             await tx.user.update({
-                where: { id: userId },
-                data: { role: 'OWNER' },
+                where: {
+                    id: userId,
+                },
+                data: {
+                    role: 'OWNER',
+                },
             });
 
             return pharmacy;
