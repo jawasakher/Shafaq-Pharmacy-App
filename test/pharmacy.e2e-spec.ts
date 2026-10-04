@@ -1,3 +1,4 @@
+
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -167,6 +168,50 @@ describe('Pharmacy API (e2e)', () => {
                     members: {
                         create: {
                             userId,
+                            role: 'OWNER',
+                            status: 'ACTIVE',
+                        },
+                    },
+                },
+            });
+
+        createdPharmacyIds.add(
+            pharmacy.id,
+        );
+
+        return pharmacy;
+    }
+
+    async function createManagedPharmacy(
+        ownerUserId: string,
+        options?: {
+            approvalStatus?:
+                | 'PENDING_APPROVAL'
+                | 'APPROVED'
+                | 'REJECTED'
+                | 'SUSPENDED';
+            operationalStatus?:
+                | 'OPEN'
+                | 'CLOSED';
+        },
+    ) {
+        const pharmacy =
+            await prisma.pharmacy.create({
+                data: {
+                    name: `E2E Pharmacy Management ${Date.now()}-${Math.random()}`,
+                    phone: '+963991234567',
+                    address: 'Latakia Management Test Address',
+                    latitude: 35.5141,
+                    longitude: 35.7767,
+                    approvalStatus:
+                        options?.approvalStatus ??
+                        'APPROVED',
+                    operationalStatus:
+                        options?.operationalStatus ??
+                        'CLOSED',
+                    members: {
+                        create: {
+                            userId: ownerUserId,
                             role: 'OWNER',
                             status: 'ACTIVE',
                         },
@@ -531,18 +576,18 @@ expect(
 expect(
     response.body.data,
 ).toMatchObject({
-  id: pharmacy.id,
-  approvalStatus:
-      'APPROVED',
-  operationalStatus:
-      'CLOSED',
+    id: pharmacy.id,
+    approvalStatus:
+        'APPROVED',
+    operationalStatus:
+        'CLOSED',
 });
 
 const updated =
     await prisma.pharmacy.findUnique({
-      where: {
-        id: pharmacy.id,
-      },
+        where: {
+            id: pharmacy.id,
+        },
     });
 
 expect(
@@ -555,49 +600,49 @@ expect(
 });
 
 it('does not allow approving an already approved pharmacy', async () => {
-  const admin =
-      await createUser('ADMIN');
+    const admin =
+        await createUser('ADMIN');
 
-  const pharmacy =
-      await prisma.pharmacy.create({
-        data: {
-          name: `E2E Pharmacy Already Approved ${Date.now()}`,
-          address: 'Test Address',
-          latitude: 35.5141,
-          longitude: 35.7767,
-          approvalStatus:
-              'APPROVED',
-          operationalStatus:
-              'CLOSED',
-        },
-      });
+    const pharmacy =
+        await prisma.pharmacy.create({
+            data: {
+                name: `E2E Pharmacy Already Approved ${Date.now()}`,
+                address: 'Test Address',
+                latitude: 35.5141,
+                longitude: 35.7767,
+                approvalStatus:
+                    'APPROVED',
+                operationalStatus:
+                    'CLOSED',
+            },
+        });
 
-  createdPharmacyIds.add(
-      pharmacy.id,
-  );
+    createdPharmacyIds.add(
+        pharmacy.id,
+    );
 
-  const token =
-      await createInternalToken(
-          admin.id,
-      );
+    const token =
+        await createInternalToken(
+            admin.id,
+        );
 
-  const response = await request(
-      app.getHttpServer(),
-  )
-      .post(
-          `/api/v1/pharmacies/admin/${pharmacy.id}/approve`,
-      )
-      .set(
-          'Authorization',
-          `Bearer ${token}`,
-      )
-      .expect(400);
+    const response = await request(
+        app.getHttpServer(),
+    )
+        .post(
+            `/api/v1/pharmacies/admin/${pharmacy.id}/approve`,
+        )
+        .set(
+            'Authorization',
+            `Bearer ${token}`,
+        )
+        .expect(400);
 
-  expect(
-      response.body.message,
-  ).toContain(
-      'Invalid pharmacy approval transition',
-  );
+    expect(
+        response.body.message,
+    ).toContain(
+        'Invalid pharmacy approval transition',
+    );
 });
 
 // ============================================================
@@ -605,85 +650,85 @@ it('does not allow approving an already approved pharmacy', async () => {
 // ============================================================
 
 it('allows an admin to reject a pending pharmacy', async () => {
-  const admin =
-      await createUser('ADMIN');
+    const admin =
+        await createUser('ADMIN');
 
-  const owner =
-      await createUser('OWNER');
+    const owner =
+        await createUser('OWNER');
 
-  const pharmacy =
-      await createPendingPharmacy(
-          owner.id,
-      );
+    const pharmacy =
+        await createPendingPharmacy(
+            owner.id,
+        );
 
-  const token =
-      await createInternalToken(
-          admin.id,
-      );
+    const token =
+        await createInternalToken(
+            admin.id,
+        );
 
-  const response = await request(
-      app.getHttpServer(),
-  )
-      .post(
-          `/api/v1/pharmacies/admin/${pharmacy.id}/reject`,
-      )
-      .set(
-          'Authorization',
-          `Bearer ${token}`,
-      )
-      .expect(201);
+    const response = await request(
+        app.getHttpServer(),
+    )
+        .post(
+            `/api/v1/pharmacies/admin/${pharmacy.id}/reject`,
+        )
+        .set(
+            'Authorization',
+            `Bearer ${token}`,
+        )
+        .expect(201);
 
-  expect(
-      response.body.success,
-  ).toBe(true);
+    expect(
+        response.body.success,
+    ).toBe(true);
 
-  expect(
-      response.body.data,
-  ).toMatchObject({
-    id: pharmacy.id,
-    approvalStatus:
-        'REJECTED',
-    operationalStatus:
-        'CLOSED',
-  });
+    expect(
+        response.body.data,
+    ).toMatchObject({
+        id: pharmacy.id,
+        approvalStatus:
+            'REJECTED',
+        operationalStatus:
+            'CLOSED',
+    });
 });
 
 it('does not allow rejecting an already approved pharmacy', async () => {
-  const admin =
-      await createUser('ADMIN');
+    const admin =
+        await createUser('ADMIN');
 
-  const pharmacy =
-      await prisma.pharmacy.create({
-        data: {
-          name: `E2E Pharmacy Approved Reject ${Date.now()}`,
-          address: 'Test Address',
-          latitude: 35.5141,
-          longitude: 35.7767,
-          approvalStatus:
-              'APPROVED',
-          operationalStatus:
-              'CLOSED',
-        },
-      });
+    const pharmacy =
+        await prisma.pharmacy.create({
+            data: {
+                name: `E2E Pharmacy Approved Reject ${Date.now()}`,
+                address: 'Test Address',
+                latitude: 35.5141,
+                longitude: 35.7767,
+                approvalStatus:
+                    'APPROVED',
+                operationalStatus:
+                    'CLOSED',
+            },
+        });
 
-  createdPharmacyIds.add(
-      pharmacy.id,
-  );
+    createdPharmacyIds.add(
+        pharmacy.id,
+    );
 
-  const token =
-      await createInternalToken(
-          admin.id,
-      );
+    const token =
+        await createInternalToken(
+            admin.id,
+        );
 
-  await request(app.getHttpServer())
-      .post(
-          `/api/v1/pharmacies/admin/${pharmacy.id}/reject`,
-      )
-      .set(
-          'Authorization',
-          `Bearer ${token}`,
-      )
-      .expect(400);
+    await request(app.getHttpServer())
+        .post(
+            `/api/v1/pharmacies/admin/${pharmacy.id}/reject`,
+        )
+        .set(
+            'Authorization',
+            `Bearer ${token}`,
+        )
+        .expect(400);
 });
 
 // ============================================================
@@ -691,72 +736,72 @@ it('does not allow rejecting an already approved pharmacy', async () => {
 // ============================================================
 
 it('allows an admin to suspend an approved pharmacy and forces it closed', async () => {
-  const admin =
-      await createUser('ADMIN');
+    const admin =
+        await createUser('ADMIN');
 
-  const pharmacy =
-      await prisma.pharmacy.create({
-        data: {
-          name: `E2E Pharmacy To Suspend ${Date.now()}`,
-          address: 'Test Address',
-          latitude: 35.5141,
-          longitude: 35.7767,
-          approvalStatus:
-              'APPROVED',
-          operationalStatus:
-              'OPEN',
-        },
-      });
+    const pharmacy =
+        await prisma.pharmacy.create({
+            data: {
+                name: `E2E Pharmacy To Suspend ${Date.now()}`,
+                address: 'Test Address',
+                latitude: 35.5141,
+                longitude: 35.7767,
+                approvalStatus:
+                    'APPROVED',
+                operationalStatus:
+                    'OPEN',
+            },
+        });
 
-  createdPharmacyIds.add(
-      pharmacy.id,
-  );
+    createdPharmacyIds.add(
+        pharmacy.id,
+    );
 
-  const token =
-      await createInternalToken(
-          admin.id,
-      );
+    const token =
+        await createInternalToken(
+            admin.id,
+        );
 
-  const response = await request(
-      app.getHttpServer(),
-  )
-      .post(
-          `/api/v1/pharmacies/admin/${pharmacy.id}/suspend`,
-      )
-      .set(
-          'Authorization',
-          `Bearer ${token}`,
-      )
-      .expect(201);
+    const response = await request(
+        app.getHttpServer(),
+    )
+        .post(
+            `/api/v1/pharmacies/admin/${pharmacy.id}/suspend`,
+        )
+        .set(
+            'Authorization',
+            `Bearer ${token}`,
+        )
+        .expect(201);
 
-  expect(
-      response.body.success,
-  ).toBe(true);
+    expect(
+        response.body.success,
+    ).toBe(true);
 
-  expect(
-      response.body.data,
-  ).toMatchObject({
-    id: pharmacy.id,
-    approvalStatus:
-        'SUSPENDED',
-    operationalStatus:
-        'CLOSED',
-  });
+    expect(
+        response.body.data,
+    ).toMatchObject({
+        id: pharmacy.id,
+        approvalStatus:
+            'SUSPENDED',
+        operationalStatus:
+            'CLOSED',
+    });
 
-  const updated =
-      await prisma.pharmacy.findUnique({
-        where: {
-          id: pharmacy.id,
-        },
-      });
+    const updated =
+        await prisma.pharmacy.findUnique({
+            where: {
+                id: pharmacy.id,
+            },
+        });
 
-  expect(
-      updated?.approvalStatus,
-  ).toBe('SUSPENDED');
+    expect(
+        updated?.approvalStatus,
+    ).toBe('SUSPENDED');
 
-  expect(
-      updated?.operationalStatus,
-  ).toBe('CLOSED');
+    expect(
+        updated?.operationalStatus,
+    ).toBe('CLOSED');
 });
 
 // ============================================================
@@ -764,22 +809,518 @@ it('allows an admin to suspend an approved pharmacy and forces it closed', async
 // ============================================================
 
 it('returns 404 when an admin tries to change a nonexistent pharmacy', async () => {
-  const admin =
-      await createUser('ADMIN');
+    const admin =
+        await createUser('ADMIN');
 
-  const token =
-      await createInternalToken(
-          admin.id,
-      );
+    const token =
+        await createInternalToken(
+            admin.id,
+        );
 
-  await request(app.getHttpServer())
-      .post(
-          '/api/v1/pharmacies/admin/00000000-0000-0000-0000-000000000000/approve',
-      )
-      .set(
-          'Authorization',
-          `Bearer ${token}`,
-      )
-      .expect(404);
+    await request(app.getHttpServer())
+        .post(
+            '/api/v1/pharmacies/admin/00000000-0000-0000-0000-000000000000/approve',
+        )
+        .set(
+            'Authorization',
+            `Bearer ${token}`,
+        )
+        .expect(404);
+});
+
+// ============================================================
+// PHARMACY MANAGEMENT — OWNER
+// ============================================================
+
+it('allows an owner to open their approved pharmacy', async () => {
+    const owner =
+        await createUser('OWNER');
+
+    const pharmacy =
+        await createManagedPharmacy(
+            owner.id,
+            {
+                approvalStatus: 'APPROVED',
+                operationalStatus: 'CLOSED',
+            },
+        );
+
+    const token =
+        await createInternalToken(
+            owner.id,
+        );
+
+    const response = await request(
+        app.getHttpServer(),
+    )
+        .post(
+            `/api/v1/pharmacies/${pharmacy.id}/open`,
+        )
+        .set(
+            'Authorization',
+            `Bearer ${token}`,
+        )
+        .expect(201);
+
+    expect(
+        response.body.success,
+    ).toBe(true);
+
+    expect(
+        response.body.data,
+    ).toMatchObject({
+        id: pharmacy.id,
+        approvalStatus:
+            'APPROVED',
+        operationalStatus:
+            'OPEN',
+    });
+
+    const updated =
+        await prisma.pharmacy.findUnique({
+            where: {
+                id: pharmacy.id,
+            },
+        });
+
+    expect(
+        updated?.operationalStatus,
+    ).toBe('OPEN');
+});
+
+it('allows an owner to close their open pharmacy', async () => {
+    const owner =
+        await createUser('OWNER');
+
+    const pharmacy =
+        await createManagedPharmacy(
+            owner.id,
+            {
+                approvalStatus: 'APPROVED',
+                operationalStatus: 'OPEN',
+            },
+        );
+
+    const token =
+        await createInternalToken(
+            owner.id,
+        );
+
+    const response = await request(
+        app.getHttpServer(),
+    )
+        .post(
+            `/api/v1/pharmacies/${pharmacy.id}/close`,
+        )
+        .set(
+            'Authorization',
+            `Bearer ${token}`,
+        )
+        .expect(201);
+
+    expect(
+        response.body.success,
+    ).toBe(true);
+
+    expect(
+        response.body.data,
+    ).toMatchObject({
+        id: pharmacy.id,
+        approvalStatus:
+            'APPROVED',
+        operationalStatus:
+            'CLOSED',
+    });
+
+    const updated =
+        await prisma.pharmacy.findUnique({
+            where: {
+                id: pharmacy.id,
+            },
+        });
+
+    expect(
+        updated?.operationalStatus,
+    ).toBe('CLOSED');
+});
+
+it('does not allow an owner to open another owner pharmacy', async () => {
+    const ownerOne =
+        await createUser('OWNER');
+
+    const ownerTwo =
+        await createUser('OWNER');
+
+    const pharmacy =
+        await createManagedPharmacy(
+            ownerTwo.id,
+            {
+                approvalStatus: 'APPROVED',
+                operationalStatus: 'CLOSED',
+            },
+        );
+
+    const token =
+        await createInternalToken(
+            ownerOne.id,
+        );
+
+    await request(app.getHttpServer())
+        .post(
+            `/api/v1/pharmacies/${pharmacy.id}/open`,
+        )
+        .set(
+            'Authorization',
+            `Bearer ${token}`,
+        )
+        .expect(404);
+
+    const updated =
+        await prisma.pharmacy.findUnique({
+            where: {
+                id: pharmacy.id,
+            },
+        });
+
+    expect(
+        updated?.operationalStatus,
+    ).toBe('CLOSED');
+});
+
+it('rejects unauthenticated owner pharmacy management', async () => {
+    const owner =
+        await createUser('OWNER');
+
+    const pharmacy =
+        await createManagedPharmacy(
+            owner.id,
+            {
+                approvalStatus: 'APPROVED',
+                operationalStatus: 'CLOSED',
+            },
+        );
+
+    await request(app.getHttpServer())
+        .post(
+            `/api/v1/pharmacies/${pharmacy.id}/open`,
+        )
+        .expect(401);
+});
+
+it('rejects non-owner internal users from owner pharmacy management', async () => {
+    const owner =
+        await createUser('OWNER');
+
+    const pharmacist =
+        await createUser('PHARMACIST');
+
+    const pharmacy =
+        await createManagedPharmacy(
+            owner.id,
+            {
+                approvalStatus: 'APPROVED',
+                operationalStatus: 'CLOSED',
+            },
+        );
+
+    const token =
+        await createInternalToken(
+            pharmacist.id,
+        );
+
+    await request(app.getHttpServer())
+        .post(
+            `/api/v1/pharmacies/${pharmacy.id}/open`,
+        )
+        .set(
+            'Authorization',
+            `Bearer ${token}`,
+        )
+        .expect(403);
+});
+
+// ============================================================
+// PHARMACY MANAGEMENT — ADMIN
+// ============================================================
+
+it('allows an admin to open an approved pharmacy', async () => {
+    const admin =
+        await createUser('ADMIN');
+
+    const owner =
+        await createUser('OWNER');
+
+    const pharmacy =
+        await createManagedPharmacy(
+            owner.id,
+            {
+                approvalStatus: 'APPROVED',
+                operationalStatus: 'CLOSED',
+            },
+        );
+
+    const token =
+        await createInternalToken(
+            admin.id,
+        );
+
+    const response = await request(
+        app.getHttpServer(),
+    )
+        .post(
+            `/api/v1/pharmacies/admin/${pharmacy.id}/open`,
+        )
+        .set(
+            'Authorization',
+            `Bearer ${token}`,
+        )
+        .expect(201);
+
+    expect(
+        response.body.success,
+    ).toBe(true);
+
+    expect(
+        response.body.data,
+    ).toMatchObject({
+        id: pharmacy.id,
+        approvalStatus:
+            'APPROVED',
+        operationalStatus:
+            'OPEN',
+    });
+});
+
+it('allows an admin to close an open pharmacy', async () => {
+    const admin =
+        await createUser('ADMIN');
+
+    const owner =
+        await createUser('OWNER');
+
+    const pharmacy =
+        await createManagedPharmacy(
+            owner.id,
+            {
+                approvalStatus: 'APPROVED',
+                operationalStatus: 'OPEN',
+            },
+        );
+
+    const token =
+        await createInternalToken(
+            admin.id,
+        );
+
+    const response = await request(
+        app.getHttpServer(),
+    )
+        .post(
+            `/api/v1/pharmacies/admin/${pharmacy.id}/close`,
+        )
+        .set(
+            'Authorization',
+            `Bearer ${token}`,
+        )
+        .expect(201);
+
+    expect(
+        response.body.success,
+    ).toBe(true);
+
+    expect(
+        response.body.data,
+    ).toMatchObject({
+        id: pharmacy.id,
+        approvalStatus:
+            'APPROVED',
+        operationalStatus:
+            'CLOSED',
+    });
+});
+
+it('rejects non-admin internal users from admin pharmacy management', async () => {
+    const owner =
+        await createUser('OWNER');
+
+    const pharmacy =
+        await createManagedPharmacy(
+            owner.id,
+            {
+                approvalStatus: 'APPROVED',
+                operationalStatus: 'CLOSED',
+            },
+        );
+
+    const token =
+        await createInternalToken(
+            owner.id,
+        );
+
+    await request(app.getHttpServer())
+        .post(
+            `/api/v1/pharmacies/admin/${pharmacy.id}/open`,
+        )
+        .set(
+            'Authorization',
+            `Bearer ${token}`,
+        )
+        .expect(403);
+});
+
+// ============================================================
+// PHARMACY MANAGEMENT — INVALID STATES
+// ============================================================
+
+it('does not allow opening a pending pharmacy', async () => {
+    const owner =
+        await createUser('OWNER');
+
+    const pharmacy =
+        await createManagedPharmacy(
+            owner.id,
+            {
+                approvalStatus:
+                    'PENDING_APPROVAL',
+                operationalStatus: 'CLOSED',
+            },
+        );
+
+    const token =
+        await createInternalToken(
+            owner.id,
+        );
+
+    const response = await request(
+        app.getHttpServer(),
+    )
+        .post(
+            `/api/v1/pharmacies/${pharmacy.id}/open`,
+        )
+        .set(
+            'Authorization',
+            `Bearer ${token}`,
+        )
+        .expect(400);
+
+    expect(
+        response.body.message,
+    ).toContain(
+        'Pharmacy cannot be opened from its current state',
+    );
+});
+
+it('does not allow opening a suspended pharmacy', async () => {
+    const admin =
+        await createUser('ADMIN');
+
+    const owner =
+        await createUser('OWNER');
+
+    const pharmacy =
+        await createManagedPharmacy(
+            owner.id,
+            {
+                approvalStatus: 'SUSPENDED',
+                operationalStatus: 'CLOSED',
+            },
+        );
+
+    const token =
+        await createInternalToken(
+            admin.id,
+        );
+
+    const response = await request(
+        app.getHttpServer(),
+    )
+        .post(
+            `/api/v1/pharmacies/admin/${pharmacy.id}/open`,
+        )
+        .set(
+            'Authorization',
+            `Bearer ${token}`,
+        )
+        .expect(400);
+
+    expect(
+        response.body.message,
+    ).toContain(
+        'Pharmacy cannot be opened from its current state',
+    );
+});
+
+it('does not allow opening an already open pharmacy', async () => {
+    const owner =
+        await createUser('OWNER');
+
+    const pharmacy =
+        await createManagedPharmacy(
+            owner.id,
+            {
+                approvalStatus: 'APPROVED',
+                operationalStatus: 'OPEN',
+            },
+        );
+
+    const token =
+        await createInternalToken(
+            owner.id,
+        );
+
+    const response = await request(
+        app.getHttpServer(),
+    )
+        .post(
+            `/api/v1/pharmacies/${pharmacy.id}/open`,
+        )
+        .set(
+            'Authorization',
+            `Bearer ${token}`,
+        )
+        .expect(400);
+
+    expect(
+        response.body.message,
+    ).toContain(
+        'Pharmacy cannot be opened from its current state',
+    );
+});
+
+it('does not allow closing an already closed pharmacy', async () => {
+    const owner =
+        await createUser('OWNER');
+
+    const pharmacy =
+        await createManagedPharmacy(
+            owner.id,
+            {
+                approvalStatus: 'APPROVED',
+                operationalStatus: 'CLOSED',
+            },
+        );
+
+    const token =
+        await createInternalToken(
+            owner.id,
+        );
+
+    const response = await request(
+        app.getHttpServer(),
+    )
+        .post(
+            `/api/v1/pharmacies/${pharmacy.id}/close`,
+        )
+        .set(
+            'Authorization',
+            `Bearer ${token}`,
+        )
+        .expect(400);
+
+    expect(
+        response.body.message,
+    ).toContain(
+        'Pharmacy cannot be closed from its current state',
+    );
 });
 });

@@ -1,3 +1,4 @@
+
 import {
     BadRequestException,
     Injectable,
@@ -86,10 +87,102 @@ export class PharmacyService {
         );
     }
 
+    async openPharmacy(
+        pharmacyId: string,
+        actorUserId: string,
+        actorRole: 'OWNER' | 'ADMIN',
+    ) {
+        if (actorRole === 'OWNER') {
+            await this.assertActiveOwner(
+                pharmacyId,
+                actorUserId,
+            );
+        }
+
+        const result = await this.prisma.pharmacy.updateMany({
+            where: {
+                id: pharmacyId,
+                approvalStatus: 'APPROVED',
+                operationalStatus: 'CLOSED',
+            },
+            data: {
+                operationalStatus: 'OPEN',
+            },
+        });
+
+        if (result.count === 0) {
+            await this.assertPharmacyExists(pharmacyId);
+
+            throw new BadRequestException(
+                'Pharmacy cannot be opened from its current state',
+            );
+        }
+
+        return this.prisma.pharmacy.findUniqueOrThrow({
+            where: {
+                id: pharmacyId,
+            },
+            select: {
+                id: true,
+                name: true,
+                approvalStatus: true,
+                operationalStatus: true,
+            },
+        });
+    }
+
+    async closePharmacy(
+        pharmacyId: string,
+        actorUserId: string,
+        actorRole: 'OWNER' | 'ADMIN',
+    ) {
+        if (actorRole === 'OWNER') {
+            await this.assertActiveOwner(
+                pharmacyId,
+                actorUserId,
+            );
+        }
+
+        const result = await this.prisma.pharmacy.updateMany({
+            where: {
+                id: pharmacyId,
+                operationalStatus: 'OPEN',
+            },
+            data: {
+                operationalStatus: 'CLOSED',
+            },
+        });
+
+        if (result.count === 0) {
+            await this.assertPharmacyExists(pharmacyId);
+
+            throw new BadRequestException(
+                'Pharmacy cannot be closed from its current state',
+            );
+        }
+
+        return this.prisma.pharmacy.findUniqueOrThrow({
+            where: {
+                id: pharmacyId,
+            },
+            select: {
+                id: true,
+                name: true,
+                approvalStatus: true,
+                operationalStatus: true,
+            },
+        });
+    }
+
     private async transitionApproval(
         pharmacyId: string,
-        expectedStatus: 'PENDING_APPROVAL' | 'APPROVED',
-        nextStatus: 'APPROVED' | 'REJECTED' | 'SUSPENDED',
+        expectedStatus:
+            | 'PENDING_APPROVAL'
+            | 'APPROVED',
+        nextStatus:
+            | 'APPROVED'
+            | 'REJECTED'
+            | 'SUSPENDED',
     ) {
         const result = await this.prisma.pharmacy.updateMany({
             where: {
@@ -107,18 +200,21 @@ export class PharmacyService {
         });
 
         if (result.count === 0) {
-            const pharmacy = await this.prisma.pharmacy.findUnique({
-                where: {
-                    id: pharmacyId,
-                },
-                select: {
-                    id: true,
-                    approvalStatus: true,
-                },
-            });
+            const pharmacy =
+                await this.prisma.pharmacy.findUnique({
+                    where: {
+                        id: pharmacyId,
+                    },
+                    select: {
+                        id: true,
+                        approvalStatus: true,
+                    },
+                });
 
             if (!pharmacy) {
-                throw new NotFoundException('Pharmacy not found');
+                throw new NotFoundException(
+                    'Pharmacy not found',
+                );
             }
 
             throw new BadRequestException(
@@ -153,6 +249,7 @@ export class PharmacyService {
                     longitude: input.longitude,
                     approvalStatus: 'PENDING_APPROVAL',
                     operationalStatus: 'CLOSED',
+
                     members: {
                         create: {
                             userId,
@@ -161,6 +258,7 @@ export class PharmacyService {
                         },
                     },
                 },
+
                 select: {
                     id: true,
                     name: true,
@@ -170,6 +268,7 @@ export class PharmacyService {
                     longitude: true,
                     approvalStatus: true,
                     operationalStatus: true,
+
                     members: {
                         where: {
                             userId,
@@ -194,5 +293,49 @@ export class PharmacyService {
 
             return pharmacy;
         });
+    }
+
+    private async assertActiveOwner(
+        pharmacyId: string,
+        userId: string,
+    ) {
+        const membership =
+            await this.prisma.pharmacyMember.findFirst({
+                where: {
+                    pharmacyId,
+                    userId,
+                    role: 'OWNER',
+                    status: 'ACTIVE',
+                },
+                select: {
+                    id: true,
+                },
+            });
+
+        if (!membership) {
+            throw new NotFoundException(
+                'Pharmacy not found',
+            );
+        }
+    }
+
+    private async assertPharmacyExists(
+        pharmacyId: string,
+    ) {
+        const pharmacy =
+            await this.prisma.pharmacy.findUnique({
+                where: {
+                    id: pharmacyId,
+                },
+                select: {
+                    id: true,
+                },
+            });
+
+        if (!pharmacy) {
+            throw new NotFoundException(
+                'Pharmacy not found',
+            );
+        }
     }
 }

@@ -1,3 +1,4 @@
+
 import {
     Body,
     Controller,
@@ -21,18 +22,10 @@ export class PharmacyController {
         private readonly pharmacyService: PharmacyService,
     ) {}
 
-    // ============================================================
-    // PUBLIC PHARMACY DISCOVERY
-    // ============================================================
-
     @Get()
     async findAll() {
         return this.pharmacyService.findAll();
     }
-
-    // ============================================================
-    // ADMIN — PHARMACY APPROVAL
-    // ============================================================
 
     @UseGuards(InternalIdentityGuard, RolesGuard)
     @Roles('ADMIN')
@@ -48,12 +41,7 @@ export class PharmacyController {
     @Roles('ADMIN')
     @Post('admin/:pharmacyId/approve')
     async approveApplication(
-        @Req()
-        request: {
-            params: {
-                pharmacyId: string;
-            };
-        },
+        @Req() request: { params: { pharmacyId: string } },
     ) {
         return {
             success: true,
@@ -67,12 +55,7 @@ export class PharmacyController {
     @Roles('ADMIN')
     @Post('admin/:pharmacyId/reject')
     async rejectApplication(
-        @Req()
-        request: {
-            params: {
-                pharmacyId: string;
-            };
-        },
+        @Req() request: { params: { pharmacyId: string } },
     ) {
         return {
             success: true,
@@ -86,12 +69,7 @@ export class PharmacyController {
     @Roles('ADMIN')
     @Post('admin/:pharmacyId/suspend')
     async suspendPharmacy(
-        @Req()
-        request: {
-            params: {
-                pharmacyId: string;
-            };
-        },
+        @Req() request: { params: { pharmacyId: string } },
     ) {
         return {
             success: true,
@@ -101,19 +79,78 @@ export class PharmacyController {
         };
     }
 
-    // ============================================================
-    // PHARMACY APPLICATION
-    // ============================================================
+    // OWNER: فتح الصيدلية
+    @UseGuards(InternalIdentityGuard, RolesGuard)
+    @Roles('OWNER')
+    @Post(':pharmacyId/open')
+    async openPharmacy(
+        @Req() request: { params: { pharmacyId: string }; user: { id: string } },
+    ) {
+        return {
+            success: true,
+            data: await this.pharmacyService.openPharmacy(
+                request.params.pharmacyId,
+                request.user.id,
+                'OWNER',
+            ),
+        };
+    }
+
+    // OWNER: إغلاق الصيدلية
+    @UseGuards(InternalIdentityGuard, RolesGuard)
+    @Roles('OWNER')
+    @Post(':pharmacyId/close')
+    async closePharmacy(
+        @Req() request: { params: { pharmacyId: string }; user: { id: string } },
+    ) {
+        return {
+            success: true,
+            data: await this.pharmacyService.closePharmacy(
+                request.params.pharmacyId,
+                request.user.id,
+                'OWNER',
+            ),
+        };
+    }
+
+    // ADMIN: فتح أي صيدلية
+    @UseGuards(InternalIdentityGuard, RolesGuard)
+    @Roles('ADMIN')
+    @Post('admin/:pharmacyId/open')
+    async adminOpenPharmacy(
+        @Req() request: { params: { pharmacyId: string }; user: { id: string } },
+    ) {
+        return {
+            success: true,
+            data: await this.pharmacyService.openPharmacy(
+                request.params.pharmacyId,
+                request.user.id,
+                'ADMIN',
+            ),
+        };
+    }
+
+    // ADMIN: إغلاق أي صيدلية
+    @UseGuards(InternalIdentityGuard, RolesGuard)
+    @Roles('ADMIN')
+    @Post('admin/:pharmacyId/close')
+    async adminClosePharmacy(
+        @Req() request: { params: { pharmacyId: string }; user: { id: string } },
+    ) {
+        return {
+            success: true,
+            data: await this.pharmacyService.closePharmacy(
+                request.params.pharmacyId,
+                request.user.id,
+                'ADMIN',
+            ),
+        };
+    }
 
     @UseGuards(IdentityGuard)
     @Post('applications')
     async submitApplication(
-        @Req()
-        request: {
-            user: {
-                id: string;
-            };
-        },
+        @Req() request: { user: { id: string } },
         @Body() body: PharmacyApplicationInput,
     ) {
         return {
