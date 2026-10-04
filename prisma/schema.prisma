@@ -65,6 +65,41 @@ enum SessionType {
 }
 
 // ============================================================
+// ORDER ENUMS
+// ============================================================
+
+enum OrderStatus {
+  PENDING
+  PHARMACY_REVIEWING
+  PHARMACY_CONFIRMED
+  CUSTOMER_CONFIRMATION_PENDING
+  PAYMENT_PENDING
+  PAID
+  PHARMACY_PREPARING
+  READY_FOR_PICKUP
+  IN_DELIVERY
+  DELIVERED
+  COMPLETED
+  CLOSED
+}
+
+enum OrderItemStatus {
+  PENDING
+  AVAILABLE
+  UNAVAILABLE
+}
+
+enum PharmacyAssignmentStatus {
+  OFFERED
+  ACTIVE
+  REJECTED
+  EXPIRED
+  CANCELLED
+  COMPLETED
+  TRANSFERRED
+}
+
+// ============================================================
 // USER
 // ============================================================
 
@@ -81,6 +116,7 @@ model User {
   driverProfile       Driver?
   addresses           Address[]
   sessions            AuthSession[]
+  orders              Order[]
 
   @@index([role])
 }
@@ -96,8 +132,8 @@ model OtpChallenge {
   activeKey String? @unique
   codeHash  String
 
-  expiresAt DateTime
-  attempts  Int      @default(0)
+  expiresAt  DateTime
+  attempts   Int       @default(0)
   consumedAt DateTime?
 
   createdAt DateTime @default(now())
@@ -166,13 +202,15 @@ model Pharmacy {
   latitude  Decimal @db.Decimal(10, 7)
   longitude Decimal @db.Decimal(10, 7)
 
-  approvalStatus   PharmacyApprovalStatus   @default(PENDING_APPROVAL)
+  approvalStatus    PharmacyApprovalStatus    @default(PENDING_APPROVAL)
   operationalStatus PharmacyOperationalStatus @default(CLOSED)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members PharmacyMember[]
+  members             PharmacyMember[]
+  orders              Order[]
+  pharmacyAssignments PharmacyAssignment[]
 
   @@index([approvalStatus])
   @@index([operationalStatus])
@@ -213,7 +251,7 @@ model Driver {
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  approvalStatus    DriverApprovalStatus    @default(PENDING_APPROVAL)
+  approvalStatus     DriverApprovalStatus     @default(PENDING_APPROVAL)
   availabilityStatus DriverAvailabilityStatus @default(OFFLINE)
 
   createdAt DateTime @default(now())
@@ -222,4 +260,91 @@ model Driver {
   @@index([approvalStatus])
   @@index([availabilityStatus])
   @@index([approvalStatus, availabilityStatus])
+}
+
+// ============================================================
+// ORDERS
+// ============================================================
+
+model Order {
+  id String @id @default(uuid())
+
+  customerId String
+  customer   User   @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  pharmacyId String
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Restrict)
+
+  status OrderStatus @default(PENDING)
+
+  deliveryAddress   String
+  deliveryLatitude  Decimal @db.Decimal(10, 7)
+  deliveryLongitude Decimal @db.Decimal(10, 7)
+
+  medicineSubtotal Decimal? @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items       OrderItem[]
+  assignments PharmacyAssignment[]
+
+  @@index([customerId, createdAt])
+  @@index([pharmacyId, status])
+  @@index([status, createdAt])
+}
+
+// ============================================================
+// ORDER ITEMS
+// ============================================================
+
+model OrderItem {
+  id String @id @default(uuid())
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  medicineName String
+  quantity     Int
+
+  status OrderItemStatus @default(PENDING)
+
+  unitPrice  Decimal? @db.Decimal(12, 2)
+  totalPrice Decimal? @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId, status])
+}
+
+// ============================================================
+// PHARMACY ASSIGNMENTS
+// ============================================================
+
+model PharmacyAssignment {
+  id String @id @default(uuid())
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  pharmacyId String
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Restrict)
+
+  status PharmacyAssignmentStatus @default(OFFERED)
+
+  offeredAt     DateTime  @default(now())
+  activatedAt   DateTime?
+  rejectedAt    DateTime?
+  expiredAt     DateTime?
+  cancelledAt   DateTime?
+  completedAt   DateTime?
+  transferredAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId, status])
+  @@index([pharmacyId, status])
+  @@index([status, createdAt])
 }
