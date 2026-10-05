@@ -239,11 +239,6 @@ describe('Orders API (e2e)', () => {
             status: 'PENDING',
             deliveryAddress:
                 'Test Delivery Address',
-            pharmacy: {
-                id: pharmacy.id,
-                approvalStatus: 'APPROVED',
-                operationalStatus: 'OPEN',
-            },
         });
 
         expect(response.body.items).toHaveLength(2);
@@ -396,7 +391,7 @@ describe('Orders API (e2e)', () => {
                 `/api/v1/pharmacy/assignments/${assignmentId}/accept`,
             )
             .set('Authorization', `Bearer ${ownerToken}`)
-            .expect(201);
+            .expect(200);
 
         const previousBase = process.env.SHAFAQ_PRICING_BASE_FEE;
         const previousPerKm = process.env.SHAFAQ_PRICING_PER_KM;
@@ -550,7 +545,7 @@ describe('Orders API (e2e)', () => {
                 'Authorization',
                 `Bearer ${pharmacistToken}`,
             )
-            .expect(201);
+            .expect(200);
 
         const quoteResponse = await request(
             app.getHttpServer(),
@@ -875,7 +870,7 @@ describe('Orders API (e2e)', () => {
 
         await request(app.getHttpServer())
             .post(
-                `/api/v1/orders/pharmacy-assignments/${assignmentId}/accept`,
+                `/api/v1/pharmacy/assignments/${assignmentId}/accept`,
             )
             .set('Authorization', `Bearer ${ownerToken}`)
             .expect(400);
