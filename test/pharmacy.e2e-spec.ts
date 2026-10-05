@@ -307,13 +307,27 @@ describe('Pharmacy API (e2e)', () => {
             .get('/api/v1/pharmacies')
             .expect(200);
 
-        expect(response.body).toEqual([
-            expect.objectContaining({
-                name: testNames[0],
-                approvalStatus: 'APPROVED',
-                operationalStatus: 'OPEN',
-            }),
-        ]);
+        expect(response.body).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    name: testNames[0],
+                    approvalStatus: 'APPROVED',
+                    operationalStatus: 'OPEN',
+                }),
+            ]),
+        );
+
+        const returnedTestPharmacies = response.body.filter(
+            (pharmacy: { name: string }) =>
+                testNames.includes(pharmacy.name),
+        );
+
+        expect(returnedTestPharmacies).toHaveLength(1);
+        expect(returnedTestPharmacies[0]).toMatchObject({
+            name: testNames[0],
+            approvalStatus: 'APPROVED',
+            operationalStatus: 'OPEN',
+        });
     });
 
     // ============================================================
