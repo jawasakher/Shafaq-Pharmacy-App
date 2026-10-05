@@ -13,6 +13,8 @@ import { InternalIdentityGuard } from '../identity/internal-identity.guard.js';
 import { RolesGuard } from '../identity/roles.guard.js';
 import { Roles } from '../identity/roles.decorator.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
+import { PharmacyQuoteDto } from './dto/pharmacy-quote.dto.js';
+import { PriceResponseDto } from './dto/price-response.dto.js';
 import { OrdersService } from './orders.service.js';
 
 type AuthenticatedRequest = Request & {
@@ -41,19 +43,46 @@ export class OrdersController {
         );
     }
 
-    @Post('pharmacy-assignments/:assignmentId/accept')
+    @Post(':orderId/price-response')
+    @UseGuards(CustomerIdentityGuard, RolesGuard)
+    @Roles('CUSTOMER')
+    async priceResponse(
+        @Req() request: AuthenticatedRequest,
+        @Param('orderId') orderId: string,
+        @Body() dto: PriceResponseDto,
+    ) {
+        return this.ordersService.respondToPrice(
+            orderId,
+            request.user.id,
+            dto.decision,
+        );
+    }
+
+    @Post(':orderId/review')
     @UseGuards(InternalIdentityGuard, RolesGuard)
     @Roles('OWNER', 'PHARMACIST')
-    async acceptAssignment(
+    async startReview(
         @Req() request: AuthenticatedRequest,
-        @Param('assignmentId') assignmentId: string,
+        @Param('orderId') orderId: string,
     ) {
-        return {
-            success: true,
-            data: await this.ordersService.acceptPharmacyAssignment(
-                assignmentId,
-                request.user.id,
-            ),
-        };
+        return this.ordersService.startPharmacyReview(
+            orderId,
+            request.user.id,
+        );
+    }
+
+    @Post(':orderId/quote')
+    @UseGuards(InternalIdentityGuard, RolesGuard)
+    @Roles('OWNER', 'PHARMACIST')
+    async quoteOrder(
+        @Req() request: AuthenticatedRequest,
+        @Param('orderId') orderId: string,
+        @Body() dto: PharmacyQuoteDto,
+    ) {
+        return this.ordersService.quotePharmacyOrder(
+            orderId,
+            request.user.id,
+            dto,
+        );
     }
 }
