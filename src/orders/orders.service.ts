@@ -159,43 +159,16 @@ export class OrdersService {
                 );
             }
 
-            const activated =
-                await tx.pharmacyAssignment.updateMany({
-                    where: {
-                        id: assignment.id,
-                        status: 'OFFERED',
-                    },
-                    data: {
-                        status: 'ACTIVE',
-                        activatedAt: new Date(),
-                    },
-                });
-
-            if (activated.count !== 1) {
+            if (
+                order.status !== 'PENDING' &&
+                order.status !== 'PHARMACY_REVIEWING'
+            ) {
                 throw new ConflictException(
-                    'Pharmacy assignment is no longer available',
+                    'Order is not available for pharmacy assignment acceptance',
                 );
             }
 
-            if (order.status === 'PENDING') {
-                const movedToReview =
-                    await tx.order.updateMany({
-                        where: {
-                            id: order.id,
-                            status: 'PENDING',
-                        },
-                        data: {
-                            status:
-                                'PHARMACY_REVIEWING',
-                        },
-                    });
-
-                if (movedToReview.count !== 1) {
-                    throw new ConflictException(
-                        'Order is no longer available for pharmacy review',
-                    );
-                }
-            } else if (
+            if (
                 order.status ===
                 'PHARMACY_REVIEWING'
             ) {
@@ -264,10 +237,44 @@ export class OrdersService {
                             null,
                     },
                 });
-            } else {
+            }
+
+            const activated =
+                await tx.pharmacyAssignment.updateMany({
+                    where: {
+                        id: assignment.id,
+                        status: 'OFFERED',
+                    },
+                    data: {
+                        status: 'ACTIVE',
+                        activatedAt: new Date(),
+                    },
+                });
+
+            if (activated.count !== 1) {
                 throw new ConflictException(
-                    'Order is not available for pharmacy assignment acceptance',
+                    'Pharmacy assignment is no longer available',
                 );
+            }
+
+            if (order.status === 'PENDING') {
+                const movedToReview =
+                    await tx.order.updateMany({
+                        where: {
+                            id: order.id,
+                            status: 'PENDING',
+                        },
+                        data: {
+                            status:
+                                'PHARMACY_REVIEWING',
+                        },
+                    });
+
+                if (movedToReview.count !== 1) {
+                    throw new ConflictException(
+                        'Order is no longer available for pharmacy review',
+                    );
+                }
             }
 
             return tx.pharmacyAssignment.findUniqueOrThrow({
