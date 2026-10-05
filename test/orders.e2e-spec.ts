@@ -294,6 +294,59 @@ describe('Orders API (e2e)', () => {
         ).toHaveLength(2);
     });
 
+    it('creates an offered pharmacy assignment and activates it on pharmacy acceptance', async () => {
+        const customer = await authenticateCustomer();
+        const owner = await createUser('OWNER');
+        const pharmacy = await createPharmacy('APPROVED', 'OPEN');
+
+        await prisma.pharmacyMember.create({
+            data: {
+                pharmacyId: pharmacy.id,
+                userId: owner.id,
+                role: 'OWNER',
+                status: 'ACTIVE',
+            },
+        });
+
+        const createResponse = await request(
+            app.getHttpServer(),
+        )
+            .post('/api/v1/orders')
+            .set('Authorization', `Bearer ${customer.token}`)
+            .send({
+                pharmacyId: pharmacy.id,
+                deliveryAddress: 'Assignment Test Address',
+                deliveryLatitude: '35.5200000',
+                deliveryLongitude: '35.7800000',
+                items: [
+                    {
+                        medicineName: 'Paracetamol',
+                        quantity: 1,
+                    },
+                ],
+            })
+            .expect(201);
+
+        const assignmentId =
+            createResponse.body.assignments[0].id as string;
+        createdOrderIds.add(createResponse.body.id as string);
+        const ownerToken = await createInternalToken(owner.id);
+
+        const acceptResponse = await request(
+            app.getHttpServer(),
+        )
+            .post(
+                `/api/v1/orders/pharmacy-assignments/${assignmentId}/accept`,
+            )
+            .set('Authorization', `Bearer ${ownerToken}`)
+            .expect(201);
+
+        expect(acceptResponse.body.data.status).toBe('ACTIVE');
+        expect(acceptResponse.body.data.order.status).toBe(
+            'PHARMACY_REVIEWING',
+        );
+    });
+
     // ============================================================
     // AUTHORIZATION
     // ============================================================
