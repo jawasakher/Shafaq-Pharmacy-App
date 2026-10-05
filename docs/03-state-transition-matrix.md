@@ -171,6 +171,44 @@ PENDING
 
 Payment status `UNKNOWN` must not be treated as automatic payment failure.
 
+### Complete-order availability rule
+
+The pharmacy quote is evaluated against every requested `OrderItem`.
+
+If any requested item is unavailable:
+
+* `PHARMACY_REVIEWING` must not transition directly to `PHARMACY_CONFIRMED`.
+* Partial fulfillment is not supported.
+* The original complete order remains unchanged; unavailable items are not removed.
+* The current pharmacy may reject or request transfer of the complete order.
+* A receiving pharmacy is offered the complete original order and must explicitly
+	accept it before its assignment becomes `ACTIVE`.
+* The receiving pharmacy reviews the complete order again.
+* If no eligible pharmacy accepts, the order transitions to `CLOSED` according to
+	the existing `PHARMACY_REVIEWING -> CLOSED` rule.
+
+There is no partial customer confirmation and no new order status for
+unavailable medicines. `medicineSubtotal` is finalized only when the complete
+order is fulfillable and a pharmacy can transition it to
+`PHARMACY_CONFIRMED`.
+
+### Pharmacy responsibility invariant
+
+`Order.pharmacyId` records the original pharmacy selected by the customer and
+does not change during transfer. It must not be used to determine the current
+responsible pharmacy. The current responsible pharmacy is determined
+exclusively by the single `ACTIVE` `PharmacyAssignment`.
+
+For a fully fulfillable order, the backend calculates and persists:
+
+`OrderItem.totalPrice = quantity × unitPrice`
+
+`medicineSubtotal = SUM(OrderItem.totalPrice)`
+
+`totalAmount = medicineSubtotal + deliveryFee`
+
+Client-supplied subtotal and delivery fee values are non-authoritative.
+
 ---
 
 # 6. Pharmacy Assignment

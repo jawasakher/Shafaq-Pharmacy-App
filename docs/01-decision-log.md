@@ -171,9 +171,41 @@ Administrative accounts require MFA in production.
 
 An order is fulfilled entirely by one responsible pharmacy at a time.
 
+`Order.pharmacyId` is retained as the immutable original pharmacy selected by
+the customer when the order is created. It is a historical/reference field for
+the original selection only; it is not the authoritative current responsible
+pharmacy.
+
+At initial order creation, `Order.pharmacyId` and the initial
+`PharmacyAssignment.pharmacyId` contain the same pharmacy. During transfer,
+`Order.pharmacyId` never changes. The receiving pharmacy is represented by a
+new `PharmacyAssignment`, and becomes the current responsible pharmacy only
+when that assignment becomes `ACTIVE`.
+
+Authorization, Order Review, pricing-origin resolution, and any other operation
+that needs the current responsible pharmacy must resolve it exclusively from
+the single `ACTIVE` `PharmacyAssignment`. No code may use `Order.pharmacyId` as
+proof of current responsibility.
+
 Partial fulfillment across multiple pharmacies is not supported.
 
 If a pharmacy cannot fulfill the complete request, the order may be transferred to another pharmacy according to the transfer workflow.
+
+If any requested medicine is unavailable, the current pharmacy must not confirm
+the order as a partial fulfillment. The complete original order remains intact:
+unavailable items are not removed, reduced, or split into a separate order.
+
+The current pharmacy may reject or request transfer of the complete order. Any
+eligible receiving pharmacy is offered the complete original order, not only
+the unavailable items, and must explicitly accept before becoming responsible.
+The receiving pharmacy reviews the complete order again. If no eligible
+pharmacy accepts, the order follows the existing `CLOSED` outcome for an order
+that cannot continue and has no accepted transfer.
+
+There is no partial customer confirmation. The customer may not accept only the
+available items. `medicineSubtotal` is finalized only after a pharmacy confirms
+that it can fulfill the complete order. No new `OrderStatus` is introduced for
+unavailable medicines.
 
 ---
 
@@ -244,6 +276,24 @@ Delivery pricing is calculated through:
 Delivery pricing must not be hardcoded in the frontend.
 
 The calculated price must be stored as a pricing snapshot for the order.
+
+Medicine pricing is also backend-authoritative. For every fulfillable order:
+
+`OrderItem.totalPrice = quantity × unitPrice`
+
+`Order.medicineSubtotal = SUM(OrderItem.totalPrice)`
+
+The backend calculates and persists both values. A client-supplied
+`medicineSubtotal` may remain in the Quote request for API compatibility, but
+it is never authoritative. A client-supplied `deliveryFee` is never
+authoritative; `DeliveryPricingService` calculates the authoritative value.
+
+The final payable amount is:
+
+`Order.totalAmount = medicineSubtotal + deliveryFee`
+
+The backend calculates and persists `totalAmount` and `currency`. The V1
+currency value remains a pending business decision and must not be invented.
 
 ---
 

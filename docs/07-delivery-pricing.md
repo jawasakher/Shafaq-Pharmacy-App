@@ -131,6 +131,10 @@ The active strategy and its parameters are backend-controlled.
 
 No specific monetary values are defined here until the business pricing decision is approved.
 
+The V1 currency value is also pending business decision. Once selected, it is
+required persisted pricing data and must be used consistently for the Order,
+pricing snapshot, payment, reconciliation, and customer-visible amounts.
+
 For a distance-based strategy, the conceptual formula may be:
 
 `deliveryFee = baseFee + distanceCharge(distance)`
@@ -197,6 +201,25 @@ The same rounded amount must be used for:
 - audit/review of the pricing snapshot.
 
 No frontend-side rounding may change the payable amount.
+
+## 9A. Authoritative Medicine and Order Totals
+
+For a fully fulfillable order, the backend calculates and persists:
+
+`OrderItem.totalPrice = quantity × unitPrice`
+
+`Order.medicineSubtotal = SUM(OrderItem.totalPrice)`
+
+`Order.totalAmount = medicineSubtotal + deliveryFee`
+
+The pharmacy may submit `unitPrice` values in the Quote request. A submitted
+`medicineSubtotal` may remain in that request for API compatibility, but the
+backend recalculates the authoritative value from persisted OrderItem totals.
+A submitted `deliveryFee` is never authoritative; `DeliveryPricingService`
+calculates the authoritative delivery fee.
+
+If any requested medicine is unavailable, no final medicine subtotal or total
+amount is created for customer confirmation.
 
 ---
 

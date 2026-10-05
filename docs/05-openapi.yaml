@@ -242,6 +242,10 @@ paths:
       description: |
         Customer selects one pharmacy and submits one order.
         The backend validates pharmacy approval and OPEN status.
+        `Order.pharmacyId` records the original pharmacy selected by the
+        customer. It remains unchanged if the order is transferred and is not
+        the source of current pharmacy responsibility. Current responsibility
+        is resolved from the single ACTIVE PharmacyAssignment.
         One order is fulfilled by one responsible pharmacy at a time.
       requestBody:
         required: true
@@ -329,6 +333,9 @@ paths:
       description: |
         The current responsible pharmacy may request a transfer according
         to business rules. The new pharmacy must explicitly accept the offer.
+        The original Order, including `Order.pharmacyId`, remains unchanged.
+        The receiving pharmacy is represented by a new PharmacyAssignment and
+        becomes responsible only when that assignment becomes ACTIVE.
         There must be no simultaneous ACTIVE assignments.
       requestBody:
         required: true
@@ -430,6 +437,18 @@ paths:
     post:
       tags: [Orders]
       summary: Submit pharmacy price and availability decision
+      description: |
+        The quote evaluates the complete original order. Partial fulfillment
+        is not supported. If any requested item is unavailable, the pharmacy
+        must not confirm only the available items and must not remove the
+        unavailable items from the order. The pharmacy may reject or request
+        transfer of the complete order according to the transfer workflow.
+        `medicineSubtotal` is authoritative only when the complete order is
+        fulfillable and the order can proceed to PHARMACY_CONFIRMED. The
+        backend recalculates it as the sum of persisted OrderItem.totalPrice
+        values, where each total is quantity multiplied by unitPrice.
+        Client-supplied medicineSubtotal and deliveryFee values are accepted
+        only for request compatibility and are never authoritative.
       requestBody:
         required: true
         content:
@@ -1449,6 +1468,13 @@ components:
         notes:
           type: string
           maxLength: 2000
+      description: |
+        Every requested order item must be evaluated. An unavailable item does
+        not authorize partial fulfillment or partial customer confirmation.
+        The complete order remains the unit offered to a receiving pharmacy
+        during transfer. For a fully fulfillable order, the backend calculates
+        `medicineSubtotal` from item totals and calculates `totalAmount` as
+        `medicineSubtotal + deliveryFee` using authoritative delivery pricing.
 
     Order:
       type: object

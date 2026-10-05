@@ -306,6 +306,7 @@ This entity is the central aggregate for the medicine-delivery workflow.
 
 * `id`
 * `customerId`
+* `pharmacyId` — original pharmacy selected by the customer; immutable reference only
 * Delivery address snapshot fields
 * `status`
 * `subtotal`
@@ -351,9 +352,19 @@ The current responsible pharmacy is determined by the single `ACTIVE` `PharmacyA
 
 There must never be multiple active fulfillment pharmacies for the same order.
 
+`Order.pharmacyId` is retained as the original pharmacy selected by the
+customer at order creation. It is a historical/reference field and remains
+unchanged for the lifetime of the order. At creation, it matches the pharmacy
+on the initial `PharmacyAssignment`. It is not an ownership or responsibility
+field and must not be used to authorize or identify the current responsible
+pharmacy.
+
 Pharmacy transfer is modeled through `PharmacyAssignment`, not by creating partial order fulfillment.
 
-The Order entity must not contain a second independent pharmacy-ownership field that can conflict with `PharmacyAssignment`.
+After transfer, a new Assignment references the receiving pharmacy. Once that
+Assignment becomes `ACTIVE`, it is the exclusive source of current pharmacy
+responsibility. The Order entity must not contain any second independent field
+that can override or conflict with the `ACTIVE` Assignment.
 
 ---
 
@@ -384,6 +395,17 @@ Order 1 ──── 1..* OrderItem
 * Quantity must be greater than zero.
 * Final prices must be calculated and persisted by the backend.
 * Client-provided totals must never be trusted as authoritative financial values.
+* Availability is evaluated for the complete requested order.
+* Partial fulfillment is not supported.
+* An unavailable item is not removed from the order or split into another order.
+* A pharmacy may confirm the order only when it can fulfill every requested item.
+* `medicineSubtotal` is finalized only for a completely fulfillable order.
+* `OrderItem.totalPrice = quantity × unitPrice`.
+* `Order.medicineSubtotal = SUM(OrderItem.totalPrice)`.
+* `Order.totalAmount = medicineSubtotal + deliveryFee`.
+* `deliveryFee` and `totalAmount` are calculated and persisted by the backend.
+* `currency` is a required persisted pricing field; its V1 value is pending
+	business decision.
 
 ---
 

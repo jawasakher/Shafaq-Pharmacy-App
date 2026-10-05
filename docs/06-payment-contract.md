@@ -155,6 +155,16 @@ Minimum internal input:
 
 The backend calculates and validates the amount.
 
+For V1, the payment amount must equal the persisted authoritative Order
+pricing:
+
+`totalAmount = medicineSubtotal + deliveryFee`
+
+The backend must calculate and persist `totalAmount` and `currency` before the
+payment boundary. Payment must use only those persisted values and must never
+trust a client-supplied amount or currency. The V1 currency value remains a
+pending business decision.
+
 The frontend must not be trusted as the source of:
 - medicine subtotal
 - delivery fee

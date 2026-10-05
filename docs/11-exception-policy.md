@@ -128,6 +128,32 @@ It must never overwrite the newer valid state without an explicit transition rul
 
 Order exceptions must respect the order state machine.
 
+### Unavailable medicine and complete-order handling
+
+The requested order is always handled as one complete unit.
+
+If any requested medicine is unavailable:
+
+- the pharmacy must not transition the order directly to `PHARMACY_CONFIRMED`;
+- partial fulfillment is not supported;
+- unavailable `OrderItem` records remain in the original order;
+- the customer cannot confirm only the available medicines;
+- the current pharmacy may reject or request transfer of the complete order;
+- a receiving pharmacy receives and reviews the complete original order;
+- the receiving pharmacy must explicitly accept before becoming `ACTIVE` and
+	responsible;
+- if no eligible pharmacy accepts, the order follows the existing
+	`PHARMACY_REVIEWING -> CLOSED` outcome;
+- no `ALL_UNAVAILABLE` or other new `OrderStatus` may be invented;
+- `medicineSubtotal` is finalized only after complete-order fulfillment is
+	confirmed.
+- `OrderItem.totalPrice` is calculated by the backend as `quantity × unitPrice`.
+- `medicineSubtotal` is calculated by the backend as the sum of all persisted
+  `OrderItem.totalPrice` values.
+- `totalAmount` is calculated by the backend as
+  `medicineSubtotal + deliveryFee`.
+- Client-supplied subtotal and delivery-fee values are never authoritative.
+
 Examples:
 
 - pharmacy rejects/does not have requested medicine;
@@ -146,6 +172,11 @@ It must not invent ad-hoc statuses such as `BROKEN`, `FAILED_ORDER`, or `CANCELL
 ## 8. Pharmacy Transfer Exceptions
 
 A transfer is not complete merely because a transfer was requested.
+
+The original `Order.pharmacyId` is immutable and remains the pharmacy selected
+by the customer at order creation. Transfer must never rewrite it. The current
+responsible pharmacy is resolved only through the single `ACTIVE`
+`PharmacyAssignment`.
 
 The candidate pharmacy must explicitly accept/reject according to the transfer workflow.
 

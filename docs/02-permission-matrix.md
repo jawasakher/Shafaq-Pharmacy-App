@@ -90,7 +90,11 @@ Membership must be active for membership-based permissions.
 | Reject pharmacy fulfillment | NO | MEMBER | MEMBER | NO | YES |
 | Prepare confirmed order | NO | MEMBER | MEMBER | NO | YES |
 
-Pharmacy order actions require an appropriate active pharmacy membership and valid order assignment.
+Pharmacy order actions require an appropriate active pharmacy membership and a
+valid `ACTIVE` `PharmacyAssignment` for the current responsible pharmacy.
+`Order.pharmacyId` identifies only the original pharmacy selected by the
+customer and must not be used as proof of current responsibility, especially
+after transfer.
 
 ---
 
@@ -103,7 +107,9 @@ Pharmacy order actions require an appropriate active pharmacy membership and val
 | Reject transfer | NO | MEMBER | MEMBER | NO | YES |
 | Force arbitrary transfer | NO | NO | NO | NO | ADMIN |
 
-A receiving pharmacy must explicitly accept the transferred order.
+A receiving pharmacy must explicitly accept the transferred order. The
+original `Order.pharmacyId` remains unchanged; the accepted receiving
+assignment becomes the sole source of current responsibility.
 
 ---
 
