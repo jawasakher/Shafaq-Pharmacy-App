@@ -1,5 +1,7 @@
 import {
     Controller,
+    HttpCode,
+    HttpStatus,
     Param,
     Post,
     Req,
@@ -26,6 +28,7 @@ export class PharmacyAssignmentsController {
     ) {}
 
     @Post(':assignmentId/accept')
+    @HttpCode(HttpStatus.OK)
     @UseGuards(InternalIdentityGuard, RolesGuard)
     @Roles('OWNER', 'PHARMACIST')
     async acceptAssignment(
