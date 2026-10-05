@@ -1,6 +1,7 @@
 
 import {
     Body,
+    Delete,
     Controller,
     Get,
     Post,
@@ -15,6 +16,7 @@ import { RolesGuard } from '../identity/roles.guard.js';
 
 import { PharmacyService } from './pharmacy.service.js';
 import type { PharmacyApplicationInput } from './pharmacy.service.js';
+import type { PharmacyMemberInput } from './pharmacy.service.js';
 
 @Controller('api/v1/pharmacies')
 export class PharmacyController {
@@ -25,6 +27,57 @@ export class PharmacyController {
     @Get()
     async findAll() {
         return this.pharmacyService.findAll();
+    }
+
+    @UseGuards(InternalIdentityGuard, RolesGuard)
+    @Roles('OWNER', 'ADMIN')
+    @Get(':pharmacyId/pharmacists')
+    async listPharmacists(
+        @Req() request: { params: { pharmacyId: string }; user: { id: string; role: string } },
+    ) {
+        return {
+            success: true,
+            data: await this.pharmacyService.listPharmacists(
+                request.params.pharmacyId,
+                request.user.id,
+                request.user.role,
+            ),
+        };
+    }
+
+    @UseGuards(InternalIdentityGuard, RolesGuard)
+    @Roles('OWNER', 'ADMIN')
+    @Post(':pharmacyId/pharmacists')
+    async addPharmacist(
+        @Req() request: { params: { pharmacyId: string }; user: { id: string; role: string } },
+        @Body() body: PharmacyMemberInput,
+    ) {
+        return {
+            success: true,
+            data: await this.pharmacyService.addPharmacist(
+                request.params.pharmacyId,
+                body.userId,
+                request.user.id,
+                request.user.role,
+            ),
+        };
+    }
+
+    @UseGuards(InternalIdentityGuard, RolesGuard)
+    @Roles('OWNER', 'ADMIN')
+    @Delete(':pharmacyId/pharmacists/:userId')
+    async removePharmacist(
+        @Req() request: { params: { pharmacyId: string; userId: string }; user: { id: string; role: string } },
+    ) {
+        return {
+            success: true,
+            data: await this.pharmacyService.removePharmacist(
+                request.params.pharmacyId,
+                request.params.userId,
+                request.user.id,
+                request.user.role,
+            ),
+        };
     }
 
     @UseGuards(InternalIdentityGuard, RolesGuard)

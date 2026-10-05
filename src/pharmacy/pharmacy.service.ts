@@ -15,6 +15,10 @@ export type PharmacyApplicationInput = {
     longitude: number;
 };
 
+export type PharmacyMemberInput = {
+    userId: string;
+};
+
 @Injectable()
 export class PharmacyService {
     constructor(private readonly prisma: PrismaService) {}
@@ -59,6 +63,166 @@ export class PharmacyService {
                 approvalStatus: true,
                 operationalStatus: true,
                 createdAt: true,
+            },
+        });
+    }
+
+    async listPharmacists(
+        pharmacyId: string,
+        actorUserId: string,
+        actorRole: string,
+    ) {
+        await this.assertManagementAccess(
+            pharmacyId,
+            actorUserId,
+            actorRole,
+        );
+
+        return this.prisma.pharmacyMember.findMany({
+            where: {
+                pharmacyId,
+                role: 'PHARMACIST',
+            },
+            orderBy: { createdAt: 'asc' },
+            select: {
+                id: true,
+                userId: true,
+                role: true,
+                status: true,
+                createdAt: true,
+                user: {
+                    select: {
+                        id: true,
+                        phone: true,
+                        name: true,
+                        role: true,
+                    },
+                },
+            },
+        });
+    }
+
+    async addPharmacist(
+        pharmacyId: string,
+        userId: string,
+        actorUserId: string,
+        actorRole: string,
+    ) {
+        await this.assertManagementAccess(
+            pharmacyId,
+            actorUserId,
+            actorRole,
+        );
+
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, role: true },
+        });
+
+        if (!user) {
+            throw new NotFoundException('User not found');
+        }
+
+        if (user.role !== 'PHARMACIST') {
+            throw new BadRequestException(
+                'Only pharmacist users can be added to a pharmacy',
+            );
+        }
+
+        const existing = await this.prisma.pharmacyMember.findUnique({
+            where: {
+                pharmacyId_userId: { pharmacyId, userId },
+            },
+            select: { id: true, role: true, status: true },
+        });
+
+        if (existing) {
+            if (existing.role !== 'PHARMACIST') {
+                throw new BadRequestException(
+                    'The user is already an owner of this pharmacy',
+                );
+            }
+
+            if (existing.status === 'ACTIVE') {
+                throw new BadRequestException(
+                    'User is already an active pharmacist',
+                );
+            }
+
+            return this.prisma.pharmacyMember.update({
+                where: { id: existing.id },
+                data: { status: 'ACTIVE' },
+                select: {
+                    id: true,
+                    pharmacyId: true,
+                    userId: true,
+                    role: true,
+                    status: true,
+                },
+            });
+        }
+
+        return this.prisma.pharmacyMember.create({
+            data: {
+                pharmacyId,
+                userId,
+                role: 'PHARMACIST',
+                status: 'ACTIVE',
+            },
+            select: {
+                id: true,
+                pharmacyId: true,
+                userId: true,
+                role: true,
+                status: true,
+            },
+        });
+    }
+
+    async removePharmacist(
+        pharmacyId: string,
+        userId: string,
+        actorUserId: string,
+        actorRole: string,
+    ) {
+        await this.assertManagementAccess(
+            pharmacyId,
+            actorUserId,
+            actorRole,
+        );
+
+        const membership = await this.prisma.pharmacyMember.findUnique({
+            where: {
+                pharmacyId_userId: { pharmacyId, userId },
+            },
+            select: { id: true, role: true, status: true },
+        });
+
+        if (!membership) {
+            throw new NotFoundException('Pharmacy membership not found');
+        }
+
+        if (membership.role !== 'PHARMACIST') {
+            throw new BadRequestException(
+                'Owner membership requires a documented ownership transfer',
+            );
+        }
+
+        if (membership.status === 'INACTIVE') {
+            throw new BadRequestException(
+                'Pharmacist membership is already inactive',
+            );
+        }
+
+        return this.prisma.pharmacyMember.update({
+            where: { id: membership.id },
+            data: { status: 'INACTIVE' },
+            select: {
+                id: true,
+                pharmacyId: true,
+                userId: true,
+                role: true,
+                status: true,
             },
         });
     }
@@ -317,6 +481,19 @@ export class PharmacyService {
                 'Pharmacy not found',
             );
         }
+    }
+
+    private async assertManagementAccess(
+        pharmacyId: string,
+        actorUserId: string,
+        actorRole: string,
+    ) {
+        if (actorRole === 'ADMIN') {
+            await this.assertPharmacyExists(pharmacyId);
+            return;
+        }
+
+        await this.assertActiveOwner(pharmacyId, actorUserId);
     }
 
     private async assertPharmacyExists(

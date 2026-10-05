@@ -1007,6 +1007,75 @@ it('rejects unauthenticated owner pharmacy management', async () => {
         .expect(401);
 });
 
+it('allows an active owner to add, list, and deactivate a pharmacist', async () => {
+    const owner = await createUser('OWNER');
+    const pharmacist = await createUser('PHARMACIST');
+    const pharmacy = await createManagedPharmacy(owner.id, {
+        approvalStatus: 'APPROVED',
+        operationalStatus: 'OPEN',
+    });
+    const token = await createInternalToken(owner.id);
+
+    const added = await request(app.getHttpServer())
+        .post(`/api/v1/pharmacies/${pharmacy.id}/pharmacists`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ userId: pharmacist.id })
+        .expect(201);
+
+    expect(added.body.data).toMatchObject({
+        pharmacyId: pharmacy.id,
+        userId: pharmacist.id,
+        role: 'PHARMACIST',
+        status: 'ACTIVE',
+    });
+
+    const listed = await request(app.getHttpServer())
+        .get(`/api/v1/pharmacies/${pharmacy.id}/pharmacists`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+    expect(listed.body.data).toEqual([
+        expect.objectContaining({
+            userId: pharmacist.id,
+            status: 'ACTIVE',
+        }),
+    ]);
+
+    const removed = await request(app.getHttpServer())
+        .delete(
+            `/api/v1/pharmacies/${pharmacy.id}/pharmacists/${pharmacist.id}`,
+        )
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+    expect(removed.body.data).toMatchObject({
+        userId: pharmacist.id,
+        status: 'INACTIVE',
+    });
+});
+
+it('rejects a pharmacist and an owner from another pharmacy from managing membership', async () => {
+    const owner = await createUser('OWNER');
+    const foreignOwner = await createUser('OWNER');
+    const pharmacist = await createUser('PHARMACIST');
+    const pharmacy = await createManagedPharmacy(owner.id, {
+        approvalStatus: 'APPROVED',
+        operationalStatus: 'OPEN',
+    });
+    const pharmacistToken = await createInternalToken(pharmacist.id);
+    const foreignOwnerToken = await createInternalToken(foreignOwner.id);
+
+    await request(app.getHttpServer())
+        .get(`/api/v1/pharmacies/${pharmacy.id}/pharmacists`)
+        .set('Authorization', `Bearer ${pharmacistToken}`)
+        .expect(403);
+
+    await request(app.getHttpServer())
+        .get(`/api/v1/pharmacies/${pharmacy.id}/pharmacists`)
+        .set('Authorization', `Bearer ${foreignOwnerToken}`)
+        .expect(404);
+});
+
 it('rejects non-owner internal users from owner pharmacy management', async () => {
     const owner =
         await createUser('OWNER');

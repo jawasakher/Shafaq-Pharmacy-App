@@ -347,6 +347,65 @@ describe('Orders API (e2e)', () => {
         );
     });
 
+    it('rejects assignment acceptance from an inactive pharmacy owner membership', async () => {
+        const customer = await authenticateCustomer();
+        const owner = await createUser('OWNER');
+        const pharmacy = await createPharmacy('APPROVED', 'OPEN');
+
+        await prisma.pharmacyMember.create({
+            data: {
+                pharmacyId: pharmacy.id,
+                userId: owner.id,
+                role: 'OWNER',
+                status: 'INACTIVE',
+            },
+        });
+
+        const createResponse = await request(
+            app.getHttpServer(),
+        )
+            .post('/api/v1/orders')
+            .set('Authorization', `Bearer ${customer.token}`)
+            .send({
+                pharmacyId: pharmacy.id,
+                deliveryAddress: 'Inactive Owner Address',
+                deliveryLatitude: '35.5200000',
+                deliveryLongitude: '35.7800000',
+                items: [
+                    {
+                        medicineName: 'Paracetamol',
+                        quantity: 1,
+                    },
+                ],
+            })
+            .expect(201);
+
+        const orderId = createResponse.body.id as string;
+        const assignmentId =
+            createResponse.body.assignments[0].id as string;
+        createdOrderIds.add(orderId);
+        const ownerToken = await createInternalToken(owner.id);
+
+        await request(app.getHttpServer())
+            .post(
+                `/api/v1/orders/pharmacy-assignments/${assignmentId}/accept`,
+            )
+            .set('Authorization', `Bearer ${ownerToken}`)
+            .expect(400);
+
+        const assignment = await prisma.pharmacyAssignment.findUnique({
+            where: { id: assignmentId },
+            select: { status: true },
+        });
+        const order = await prisma.order.findUnique({
+            where: { id: orderId },
+            select: { status: true },
+        });
+
+        expect(assignment?.status).toBe('OFFERED');
+        expect(order?.status).toBe('PENDING');
+    });
+
     // ============================================================
     // AUTHORIZATION
     // ============================================================
