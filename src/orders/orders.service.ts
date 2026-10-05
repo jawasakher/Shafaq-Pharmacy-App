@@ -144,6 +144,21 @@ export class OrdersService {
                 actorUserId,
             );
 
+            const order =
+                await tx.order.findUnique({
+                    where: { id: assignment.orderId },
+                    select: {
+                        id: true,
+                        status: true,
+                    },
+                });
+
+            if (!order) {
+                throw new NotFoundException(
+                    'Order not found',
+                );
+            }
+
             const activated =
                 await tx.pharmacyAssignment.updateMany({
                     where: {
@@ -162,19 +177,96 @@ export class OrdersService {
                 );
             }
 
-            const order = await tx.order.updateMany({
-                where: {
-                    id: assignment.orderId,
-                    status: 'PENDING',
-                },
-                data: {
-                    status: 'PHARMACY_REVIEWING',
-                },
-            });
+            if (order.status === 'PENDING') {
+                const movedToReview =
+                    await tx.order.updateMany({
+                        where: {
+                            id: order.id,
+                            status: 'PENDING',
+                        },
+                        data: {
+                            status:
+                                'PHARMACY_REVIEWING',
+                        },
+                    });
 
-            if (order.count !== 1) {
+                if (movedToReview.count !== 1) {
+                    throw new ConflictException(
+                        'Order is no longer available for pharmacy review',
+                    );
+                }
+            } else if (
+                order.status ===
+                'PHARMACY_REVIEWING'
+            ) {
+                const previousAssignment =
+                    await tx.pharmacyAssignment.findFirst({
+                        where: {
+                            orderId: order.id,
+                            id: {
+                                not: assignment.id,
+                            },
+                            status: 'ACTIVE',
+                        },
+                        select: {
+                            id: true,
+                            pharmacyId: true,
+                        },
+                    });
+
+                if (!previousAssignment) {
+                    throw new ConflictException(
+                        'Order has no previous active pharmacy assignment',
+                    );
+                }
+
+                const transferred =
+                    await tx.pharmacyAssignment.updateMany({
+                        where: {
+                            id: previousAssignment.id,
+                            status: 'ACTIVE',
+                        },
+                        data: {
+                            status: 'TRANSFERRED',
+                            transferredAt:
+                                new Date(),
+                        },
+                    });
+
+                if (transferred.count !== 1) {
+                    throw new ConflictException(
+                        'Order responsibility changed before transfer acceptance',
+                    );
+                }
+
+                await tx.order.update({
+                    where: { id: order.id },
+                    data: {
+                        medicineSubtotal: null,
+                        deliveryFee: null,
+                        totalAmount: null,
+                        pricingOriginPharmacyId:
+                            null,
+                        pricingOriginLatitude:
+                            null,
+                        pricingOriginLongitude:
+                            null,
+                        pricingDistance: null,
+                        pricingDistanceUnit: null,
+                        pricingCalculatedAt:
+                            null,
+                        pricingQuoteAt: null,
+                        pricingSupported: null,
+                        pricingConfigurationVersion:
+                            null,
+                        pricingStrategy: null,
+                        pricingConfigurationRef:
+                            null,
+                    },
+                });
+            } else {
                 throw new ConflictException(
-                    'Order is no longer available for pharmacy review',
+                    'Order is not available for pharmacy assignment acceptance',
                 );
             }
 
@@ -191,6 +283,119 @@ export class OrdersService {
                     },
                 },
             });
+        });
+    }
+
+    async requestOrderTransfer(
+        orderId: string,
+        actorUserId: string,
+        targetPharmacyId: string,
+    ) {
+        return this.prisma.$transaction(async (tx) => {
+            const order =
+                await tx.order.findUnique({
+                    where: { id: orderId },
+                    select: {
+                        id: true,
+                        status: true,
+                    },
+                });
+
+            if (!order) {
+                throw new NotFoundException(
+                    'Order not found',
+                );
+            }
+
+            if (
+                order.status !==
+                'PHARMACY_REVIEWING'
+            ) {
+                throw new ConflictException(
+                    'Order is not available for pharmacy transfer',
+                );
+            }
+
+            const currentAssignment =
+                await this.getActiveAssignment(
+                    tx,
+                    order.id,
+                );
+
+            await this.requireActivePharmacyMembership(
+                tx,
+                currentAssignment.pharmacyId,
+                actorUserId,
+            );
+
+            if (
+                currentAssignment.pharmacyId ===
+                targetPharmacyId
+            ) {
+                throw new BadRequestException(
+                    'Target pharmacy must be different from the current pharmacy',
+                );
+            }
+
+            const targetPharmacy =
+                await tx.pharmacy.findUnique({
+                    where: {
+                        id: targetPharmacyId,
+                    },
+                    select: {
+                        id: true,
+                        approvalStatus: true,
+                        operationalStatus: true,
+                    },
+                });
+
+            if (!targetPharmacy) {
+                throw new NotFoundException(
+                    'Target pharmacy not found',
+                );
+            }
+
+            if (
+                targetPharmacy.approvalStatus !==
+                'APPROVED' ||
+                targetPharmacy.operationalStatus !==
+                    'OPEN'
+            ) {
+                throw new BadRequestException(
+                    'Target pharmacy is not eligible to receive orders',
+                );
+            }
+
+            const existingOffer =
+                await tx.pharmacyAssignment.findFirst({
+                    where: {
+                        orderId: order.id,
+                        pharmacyId:
+                            targetPharmacyId,
+                        status: 'OFFERED',
+                    },
+                    select: {
+                        id: true,
+                    },
+                });
+
+            if (existingOffer) {
+                throw new ConflictException(
+                    'A transfer offer already exists for the target pharmacy',
+                );
+            }
+
+            const assignment =
+                await tx.pharmacyAssignment.create({
+                    data: {
+                        orderId: order.id,
+                        pharmacyId:
+                            targetPharmacyId,
+                        status: 'OFFERED',
+                    },
+                });
+
+            return assignment;
         });
     }
 
