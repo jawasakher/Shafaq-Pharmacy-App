@@ -502,6 +502,80 @@ export class OrdersService {
         });
     }
 
+    async respondToPrice(
+        orderId: string,
+        customerId: string,
+        decision: 'ACCEPT' | 'REJECT' | undefined,
+    ) {
+        if (!decision) {
+            throw new BadRequestException(
+                'Price decision is required',
+            );
+        }
+
+        return this.prisma.$transaction(async (tx) => {
+            const order =
+                await tx.order.findUnique({
+                    where: { id: orderId },
+                    select: {
+                        id: true,
+                        customerId: true,
+                        status: true,
+                    },
+                });
+
+            if (!order) {
+                throw new NotFoundException(
+                    'Order not found',
+                );
+            }
+
+            if (order.customerId !== customerId) {
+                throw new BadRequestException(
+                    'Order does not belong to the customer',
+                );
+            }
+
+            if (
+                order.status !==
+                'CUSTOMER_CONFIRMATION_PENDING'
+            ) {
+                throw new ConflictException(
+                    'Order is not awaiting customer price confirmation',
+                );
+            }
+
+            const nextStatus =
+                decision === 'ACCEPT'
+                    ? 'PAYMENT_PENDING'
+                    : 'CLOSED';
+
+            const updated =
+                await tx.order.updateMany({
+                    where: {
+                        id: order.id,
+                        customerId,
+                        status:
+                            'CUSTOMER_CONFIRMATION_PENDING',
+                    },
+                    data: {
+                        status: nextStatus,
+                    },
+                });
+
+            if (updated.count !== 1) {
+                throw new ConflictException(
+                    'Order state changed before customer price response',
+                );
+            }
+
+            return this.getOrderForResponse(
+                tx,
+                order.id,
+            );
+        });
+    }
+
     private async getActiveAssignment(
         tx: Prisma.TransactionClient,
         orderId: string,
