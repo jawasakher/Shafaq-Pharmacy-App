@@ -63,47 +63,47 @@ export class OrdersService {
 
         const order = await this.prisma.$transaction(async (tx) =>
             tx.order.create({
-            data: {
-                customerId,
-                pharmacyId: dto.pharmacyId,
-                status: 'PENDING',
-                deliveryAddress: dto.deliveryAddress,
-                deliveryLatitude: dto.deliveryLatitude,
-                deliveryLongitude: dto.deliveryLongitude,
-                items: {
-                    create: dto.items.map((item) => ({
-                        medicineName: item.medicineName.trim(),
-                        quantity: item.quantity,
-                        status: 'PENDING',
-                    })),
-                },
-                assignments: {
-                    create: {
-                        pharmacyId: dto.pharmacyId,
-                        status: 'OFFERED',
+                data: {
+                    customerId,
+                    pharmacyId: dto.pharmacyId,
+                    status: 'PENDING',
+                    deliveryAddress: dto.deliveryAddress,
+                    deliveryLatitude: dto.deliveryLatitude,
+                    deliveryLongitude: dto.deliveryLongitude,
+                    items: {
+                        create: dto.items.map((item) => ({
+                            medicineName: item.medicineName.trim(),
+                            quantity: item.quantity,
+                            status: 'PENDING',
+                        })),
+                    },
+                    assignments: {
+                        create: {
+                            pharmacyId: dto.pharmacyId,
+                            status: 'OFFERED',
+                        },
                     },
                 },
-            },
-            include: {
-                items: true,
-                pharmacy: {
-                    select: {
-                        id: true,
-                        name: true,
-                        approvalStatus: true,
-                        operationalStatus: true,
+                include: {
+                    items: true,
+                    pharmacy: {
+                        select: {
+                            id: true,
+                            name: true,
+                            approvalStatus: true,
+                            operationalStatus: true,
+                        },
+                    },
+                    assignments: {
+                        select: {
+                            id: true,
+                            pharmacyId: true,
+                            status: true,
+                            offeredAt: true,
+                        },
                     },
                 },
-                assignments: {
-                    select: {
-                        id: true,
-                        pharmacyId: true,
-                        status: true,
-                        offeredAt: true,
-                    },
-                },
-            },
-        }),
+            }),
         );
 
         return {
@@ -123,49 +123,53 @@ export class OrdersService {
     async acceptPharmacyAssignment(
         assignmentId: string,
         actorUserId: string,
-        actorRole: string,
     ) {
         return this.prisma.$transaction(async (tx) => {
-            const assignment = await tx.pharmacyAssignment.findUnique({
-                where: { id: assignmentId },
-                select: {
-                    id: true,
-                    orderId: true,
-                    pharmacyId: true,
-                },
-            });
+            const assignment =
+                await tx.pharmacyAssignment.findUnique({
+                    where: { id: assignmentId },
+                    select: {
+                        id: true,
+                        orderId: true,
+                        pharmacyId: true,
+                    },
+                });
 
             if (!assignment) {
-                throw new NotFoundException('Pharmacy assignment not found');
+                throw new NotFoundException(
+                    'Pharmacy assignment not found',
+                );
             }
 
-            if (actorRole !== 'ADMIN') {
-                const membership = await tx.pharmacyMember.findFirst({
+            const membership =
+                await tx.pharmacyMember.findFirst({
                     where: {
                         pharmacyId: assignment.pharmacyId,
                         userId: actorUserId,
                         status: 'ACTIVE',
                     },
-                    select: { id: true },
+                    select: {
+                        id: true,
+                    },
                 });
 
-                if (!membership) {
-                    throw new BadRequestException(
-                        'User is not an active pharmacy member',
-                    );
-                }
+            if (!membership) {
+                throw new BadRequestException(
+                    'User is not an active pharmacy member',
+                );
             }
 
-            const activated = await tx.pharmacyAssignment.updateMany({
-                where: {
-                    id: assignment.id,
-                    status: 'OFFERED',
-                },
-                data: {
-                    status: 'ACTIVE',
-                    activatedAt: new Date(),
-                },
-            });
+            const activated =
+                await tx.pharmacyAssignment.updateMany({
+                    where: {
+                        id: assignment.id,
+                        status: 'OFFERED',
+                    },
+                    data: {
+                        status: 'ACTIVE',
+                        activatedAt: new Date(),
+                    },
+                });
 
             if (activated.count !== 1) {
                 throw new BadRequestException(
@@ -176,10 +180,11 @@ export class OrdersService {
             const order = await tx.order.updateMany({
                 where: {
                     id: assignment.orderId,
-                    pharmacyId: assignment.pharmacyId,
                     status: 'PENDING',
                 },
-                data: { status: 'PHARMACY_REVIEWING' },
+                data: {
+                    status: 'PHARMACY_REVIEWING',
+                },
             });
 
             if (order.count !== 1) {
@@ -189,9 +194,16 @@ export class OrdersService {
             }
 
             return tx.pharmacyAssignment.findUniqueOrThrow({
-                where: { id: assignment.id },
+                where: {
+                    id: assignment.id,
+                },
                 include: {
-                    order: { select: { id: true, status: true } },
+                    order: {
+                        select: {
+                            id: true,
+                            status: true,
+                        },
+                    },
                 },
             });
         });
