@@ -406,6 +406,137 @@ export class OrdersService {
         });
     }
 
+    async listPharmacyAssignmentOffers(
+        actorUserId: string,
+    ) {
+        const memberships =
+            await this.prisma.pharmacyMember.findMany({
+                where: {
+                    userId: actorUserId,
+                    status: 'ACTIVE',
+                },
+                select: {
+                    pharmacyId: true,
+                },
+            });
+
+        const pharmacyIds =
+            memberships.map(
+                (membership) =>
+                    membership.pharmacyId,
+            );
+
+        if (pharmacyIds.length === 0) {
+            return [];
+        }
+
+        return this.prisma.pharmacyAssignment.findMany({
+            where: {
+                pharmacyId: {
+                    in: pharmacyIds,
+                },
+                status: 'OFFERED',
+                order: {
+                    status: 'PHARMACY_REVIEWING',
+                },
+            },
+            orderBy: {
+                offeredAt: 'asc',
+            },
+            include: {
+                order: {
+                    include: {
+                        items: true,
+                    },
+                },
+            },
+        });
+    }
+
+    async rejectPharmacyAssignment(
+        assignmentId: string,
+        actorUserId: string,
+    ) {
+        return this.prisma.$transaction(async (tx) => {
+            const assignment =
+                await tx.pharmacyAssignment.findUnique({
+                    where: { id: assignmentId },
+                    select: {
+                        id: true,
+                        orderId: true,
+                        pharmacyId: true,
+                        status: true,
+                    },
+                });
+
+            if (!assignment) {
+                throw new NotFoundException(
+                    'Pharmacy assignment not found',
+                );
+            }
+
+            await this.requireActivePharmacyMembership(
+                tx,
+                assignment.pharmacyId,
+                actorUserId,
+            );
+
+            if (assignment.status !== 'OFFERED') {
+                throw new ConflictException(
+                    'Pharmacy assignment is not available for rejection',
+                );
+            }
+
+            const order =
+                await tx.order.findUnique({
+                    where: { id: assignment.orderId },
+                    select: {
+                        id: true,
+                        status: true,
+                    },
+                });
+
+            if (!order) {
+                throw new NotFoundException(
+                    'Order not found',
+                );
+            }
+
+            if (
+                order.status !==
+                'PHARMACY_REVIEWING'
+            ) {
+                throw new ConflictException(
+                    'Only transfer offers can be rejected in the current order state',
+                );
+            }
+
+            const rejected =
+                await tx.pharmacyAssignment.updateMany({
+                    where: {
+                        id: assignment.id,
+                        status: 'OFFERED',
+                    },
+                    data: {
+                        status: 'REJECTED',
+                        rejectedAt: new Date(),
+                    },
+                });
+
+            if (rejected.count !== 1) {
+                throw new ConflictException(
+                    'Pharmacy assignment changed before rejection',
+                );
+            }
+
+            return tx.pharmacyAssignment.findUniqueOrThrow({
+                where: {
+                    id: assignment.id,
+                },
+            });
+        });
+    }
+
     async startPharmacyReview(
         orderId: string,
         actorUserId: string,
