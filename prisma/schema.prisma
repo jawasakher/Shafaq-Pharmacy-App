@@ -6,10 +6,6 @@ datasource db {
   provider = "postgresql"
 }
 
-// ============================================================
-// ENUMS
-// ============================================================
-
 enum UserRole {
   CUSTOMER
   OWNER
@@ -64,10 +60,6 @@ enum SessionType {
   INTERNAL
 }
 
-// ============================================================
-// ORDER ENUMS
-// ============================================================
-
 enum OrderStatus {
   PENDING
   PHARMACY_REVIEWING
@@ -99,114 +91,76 @@ enum PharmacyAssignmentStatus {
   TRANSFERRED
 }
 
-// ============================================================
-// USER
-// ============================================================
+enum PrescriptionStatus {
+  PENDING_UPLOAD
+  UPLOADED
+  UNDER_REVIEW
+  ACCEPTED
+  REUPLOAD_REQUIRED
+}
 
 model User {
-  id    String   @id @default(uuid())
-  phone String   @unique
-  name  String?
-  role  UserRole @default(CUSTOMER)
-
+  id        String   @id @default(uuid())
+  phone     String   @unique
+  name      String?
+  role      UserRole @default(CUSTOMER)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   pharmacyMemberships PharmacyMember[]
-  driverProfile       Driver?
-  addresses           Address[]
-  sessions            AuthSession[]
-  orders              Order[]
+  addresses Address[]
+  sessions AuthSession[]
+  orders Order[]
+
+  prescriptionVersionsUploaded PrescriptionVersion[] @relation("PrescriptionVersionUploader")
+  prescriptionVersionsReviewed PrescriptionVersion[] @relation("PrescriptionVersionReviewer")
+
+  driver Driver?
 
   @@index([role])
 }
 
-// ============================================================
-// AUTHENTICATION
-// ============================================================
-
 model OtpChallenge {
-  id String @id @default(uuid())
-
-  phoneHash String
-  activeKey String? @unique
-  codeHash  String
-
+  id         String    @id @default(uuid())
+  phoneHash  String
+  activeKey  String?   @unique
+  codeHash   String
   expiresAt  DateTime
-  attempts   Int       @default(0)
   consumedAt DateTime?
-
-  createdAt DateTime @default(now())
+  attempts   Int       @default(0)
+  createdAt  DateTime  @default(now())
 
   @@index([phoneHash, createdAt])
   @@index([expiresAt])
 }
 
 model AuthSession {
-  id String @id @default(uuid())
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  type SessionType
-
-  tokenHash String @unique
-
-  expiresAt DateTime
-  revokedAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        SessionType
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([userId, type])
   @@index([expiresAt])
   @@index([revokedAt])
 }
 
-// ============================================================
-// ADDRESS
-// ============================================================
-
-model Address {
-  id String @id @default(uuid())
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  type      AddressType @default(HOME)
-  label     String?
-  address   String
-  latitude  Decimal     @db.Decimal(10, 7)
-  longitude Decimal     @db.Decimal(10, 7)
-
-  isDefault Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([userId])
-  @@index([userId, isDefault])
-}
-
-// ============================================================
-// PHARMACY
-// ============================================================
-
 model Pharmacy {
-  id String @id @default(uuid())
-
-  name  String
-  phone String?
-
-  address   String?
-  latitude  Decimal @db.Decimal(10, 7)
-  longitude Decimal @db.Decimal(10, 7)
-
+  id                String                    @id @default(uuid())
+  name              String
+  phone             String?
+  address           String?
+  latitude          Decimal                   @db.Decimal(10, 7)
+  longitude         Decimal                   @db.Decimal(10, 7)
   approvalStatus    PharmacyApprovalStatus    @default(PENDING_APPROVAL)
   operationalStatus PharmacyOperationalStatus @default(CLOSED)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
 
   members             PharmacyMember[]
   orders              Order[]
@@ -217,134 +171,146 @@ model Pharmacy {
   @@index([approvalStatus, operationalStatus])
 }
 
-// ============================================================
-// PHARMACY MEMBERSHIP
-// ============================================================
-
 model PharmacyMember {
-  id String @id @default(uuid())
-
+  id         String               @id @default(uuid())
   pharmacyId String
-  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  role   PharmacyMemberRole
-  status PharmacyMemberStatus @default(ACTIVE)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  pharmacy   Pharmacy             @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       PharmacyMemberRole
+  status     PharmacyMemberStatus @default(ACTIVE)
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
 
   @@unique([pharmacyId, userId])
   @@index([pharmacyId, role, status])
   @@index([userId, role, status])
 }
 
-// ============================================================
-// DRIVER
-// ============================================================
-
 model Driver {
-  id String @id @default(uuid())
-
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  approvalStatus     DriverApprovalStatus     @default(PENDING_APPROVAL)
-  availabilityStatus DriverAvailabilityStatus @default(OFFLINE)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String                   @id @default(uuid())
+  userId         String                   @unique
+  user           User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  approvalStatus DriverApprovalStatus     @default(PENDING_APPROVAL)
+  availability   DriverAvailabilityStatus @default(OFFLINE)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
 
   @@index([approvalStatus])
-  @@index([availabilityStatus])
-  @@index([approvalStatus, availabilityStatus])
+  @@index([availability])
+  @@index([approvalStatus, availability])
 }
 
-// ============================================================
-// ORDERS
-// ============================================================
+model Address {
+  id        String      @id @default(uuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      AddressType
+  label     String?
+  address   String
+  latitude  Decimal     @db.Decimal(10, 7)
+  longitude Decimal     @db.Decimal(10, 7)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([userId])
+}
 
 model Order {
-  id String @id @default(uuid())
-
-  customerId String
-  customer   User   @relation(fields: [customerId], references: [id], onDelete: Restrict)
-
-  pharmacyId String
-  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Restrict)
-
-  status OrderStatus @default(PENDING)
-
+  id                String      @id @default(uuid())
+  customerId        String
+  customer          User        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  pharmacyId        String
+  pharmacy          Pharmacy    @relation(fields: [pharmacyId], references: [id], onDelete: Restrict)
+  status            OrderStatus @default(PENDING)
   deliveryAddress   String
-  deliveryLatitude  Decimal @db.Decimal(10, 7)
-  deliveryLongitude Decimal @db.Decimal(10, 7)
+  deliveryLatitude  Decimal     @db.Decimal(10, 7)
+  deliveryLongitude Decimal     @db.Decimal(10, 7)
+  medicineSubtotal  Decimal?    @db.Decimal(12, 2)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
 
-  medicineSubtotal Decimal? @db.Decimal(12, 2)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  items       OrderItem[]
-  assignments PharmacyAssignment[]
+  items        OrderItem[]
+  assignments  PharmacyAssignment[]
+  prescription Prescription?
 
   @@index([customerId, createdAt])
   @@index([pharmacyId, status])
   @@index([status, createdAt])
 }
 
-// ============================================================
-// ORDER ITEMS
-// ============================================================
-
 model OrderItem {
-  id String @id @default(uuid())
-
-  orderId String
-  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
+  id           String          @id @default(uuid())
+  orderId      String
+  order        Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
   medicineName String
   quantity     Int
-
-  status OrderItemStatus @default(PENDING)
-
-  unitPrice  Decimal? @db.Decimal(12, 2)
-  totalPrice Decimal? @db.Decimal(12, 2)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  status       OrderItemStatus @default(PENDING)
+  unitPrice    Decimal?        @db.Decimal(12, 2)
+  totalPrice   Decimal?        @db.Decimal(12, 2)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 
   @@index([orderId, status])
 }
 
-// ============================================================
-// PHARMACY ASSIGNMENTS
-// ============================================================
-
 model PharmacyAssignment {
-  id String @id @default(uuid())
-
-  orderId String
-  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  pharmacyId String
-  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Restrict)
-
-  status PharmacyAssignmentStatus @default(OFFERED)
-
-  offeredAt     DateTime  @default(now())
+  id            String                   @id @default(uuid())
+  orderId       String
+  order         Order                    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  pharmacyId    String
+  pharmacy      Pharmacy                 @relation(fields: [pharmacyId], references: [id], onDelete: Restrict)
+  status        PharmacyAssignmentStatus @default(OFFERED)
+  offeredAt     DateTime                 @default(now())
   activatedAt   DateTime?
   rejectedAt    DateTime?
   expiredAt     DateTime?
   cancelledAt   DateTime?
   completedAt   DateTime?
   transferredAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
 
   @@index([orderId, status])
   @@index([pharmacyId, status])
   @@index([status, createdAt])
+}
+
+model Prescription {
+  id        String             @id @default(uuid())
+  orderId   String             @unique
+  order     Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    PrescriptionStatus @default(PENDING_UPLOAD)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  versions PrescriptionVersion[]
+
+  @@index([status])
+}
+
+model PrescriptionVersion {
+  id               String       @id @default(uuid())
+  prescriptionId   String
+  prescription     Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  version          Int
+  storageKey       String
+  originalFileName String
+  mimeType         String
+  sizeBytes        Int
+  uploadedByUserId String
+  uploadedByUser   User         @relation("PrescriptionVersionUploader", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+  uploadedAt       DateTime     @default(now())
+
+  status           PrescriptionStatus @default(UPLOADED)
+  rejectionReason  String?
+  reviewNotes      String?
+  reviewedByUserId String?
+  reviewedByUser   User?              @relation("PrescriptionVersionReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  reviewedAt       DateTime?
+
+  @@unique([prescriptionId, version])
+  @@index([prescriptionId])
+  @@index([uploadedByUserId])
+  @@index([reviewedByUserId])
 }
