@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import {
     Pressable,
     ScrollView,
@@ -23,7 +23,7 @@ const pharmacies: Pharmacy[] = [
     {
         id: '1',
         name: 'صيدلية الشفاء',
-        distance: '0.8 كم',
+        distance: 'قيد التحديد',
         deliveryTime: '20 - 30 دقيقة',
         rating: '4.8',
         isOpen: true,
@@ -31,7 +31,7 @@ const pharmacies: Pharmacy[] = [
     {
         id: '2',
         name: 'صيدلية النور',
-        distance: '1.4 كم',
+        distance: 'قيد التحديد',
         deliveryTime: '25 - 35 دقيقة',
         rating: '4.7',
         isOpen: true,
@@ -39,7 +39,7 @@ const pharmacies: Pharmacy[] = [
     {
         id: '3',
         name: 'صيدلية الحياة',
-        distance: '2.1 كم',
+        distance: 'قيد التحديد',
         deliveryTime: '30 - 40 دقيقة',
         rating: '4.6',
         isOpen: false,
@@ -47,6 +47,17 @@ const pharmacies: Pharmacy[] = [
 ];
 
 export default function PharmaciesScreen() {
+    const params = useLocalSearchParams<{
+        latitude?: string;
+        longitude?: string;
+    }>();
+
+    const latitude = params.latitude;
+    const longitude = params.longitude;
+
+    const hasLocation =
+        Boolean(latitude) && Boolean(longitude);
+
     const handleSelectPharmacy = (pharmacy: Pharmacy) => {
         if (!pharmacy.isOpen) {
             return;
@@ -56,6 +67,8 @@ export default function PharmaciesScreen() {
             pathname: '/pharmacy-details',
             params: {
                 pharmacyId: pharmacy.id,
+                latitude: latitude ?? '',
+                longitude: longitude ?? '',
             },
         });
     };
@@ -94,7 +107,9 @@ export default function PharmaciesScreen() {
                             </ThemedText>
 
                             <ThemedText style={styles.locationValue}>
-                                موقعك الحالي
+                                {hasLocation
+                                    ? 'تم تحديد موقعك الحالي'
+                                    : 'لم يتم تحديد الموقع'}
                             </ThemedText>
                         </View>
                     </View>
@@ -115,7 +130,8 @@ export default function PharmaciesScreen() {
                                 key={pharmacy.id}
                                 style={[
                                     styles.pharmacyCard,
-                                    !pharmacy.isOpen && styles.closedCard,
+                                    !pharmacy.isOpen &&
+                                    styles.closedCard,
                                 ]}
                             >
                                 <View style={styles.cardTop}>

@@ -1,5 +1,11 @@
+
 import { router, useLocalSearchParams } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import {
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -19,7 +25,7 @@ const pharmacies: Pharmacy[] = [
     {
         id: '1',
         name: 'صيدلية الشفاء',
-        distance: '0.8 كم',
+        distance: 'قيد التحديد',
         deliveryTime: '20 - 30 دقيقة',
         rating: '4.8',
         address: 'المدينة - المنطقة الرئيسية',
@@ -28,7 +34,7 @@ const pharmacies: Pharmacy[] = [
     {
         id: '2',
         name: 'صيدلية النور',
-        distance: '1.4 كم',
+        distance: 'قيد التحديد',
         deliveryTime: '25 - 35 دقيقة',
         rating: '4.7',
         address: 'المدينة - شارع المركز',
@@ -37,7 +43,7 @@ const pharmacies: Pharmacy[] = [
     {
         id: '3',
         name: 'صيدلية الحياة',
-        distance: '2.1 كم',
+        distance: 'قيد التحديد',
         deliveryTime: '30 - 40 دقيقة',
         rating: '4.6',
         address: 'المدينة - الحي الشرقي',
@@ -46,14 +52,64 @@ const pharmacies: Pharmacy[] = [
 ];
 
 export default function PharmacyDetailsScreen() {
-    const { pharmacyId } = useLocalSearchParams<{ pharmacyId: string }>();
+    const params = useLocalSearchParams<{
+        pharmacyId?: string;
+        latitude?: string;
+        longitude?: string;
+    }>();
 
-    const pharmacy =
-        pharmacies.find((item) => item.id === pharmacyId) ?? pharmacies[0];
+    const pharmacyId = params.pharmacyId;
+    const latitude = params.latitude;
+    const longitude = params.longitude;
+
+    const pharmacy = pharmacies.find(
+        (item) => item.id === pharmacyId
+    );
+
+    const hasLocation =
+        Boolean(latitude) && Boolean(longitude);
 
     const handleSelectPharmacy = () => {
-        router.push('/order-review');
+        if (!pharmacy || !pharmacy.isOpen) {
+            return;
+        }
+
+        router.push({
+            pathname: '/order-review',
+            params: {
+                pharmacyId: pharmacy.id,
+                latitude: latitude ?? '',
+                longitude: longitude ?? '',
+            },
+        });
     };
+
+    if (!pharmacy) {
+        return (
+            <ThemedView style={styles.container}>
+                <SafeAreaView style={styles.safeArea}>
+                    <View style={styles.errorContainer}>
+                        <ThemedText style={styles.errorTitle}>
+                            تعذر العثور على الصيدلية
+                        </ThemedText>
+
+                        <ThemedText style={styles.errorText}>
+                            يرجى العودة واختيار الصيدلية من القائمة
+                        </ThemedText>
+
+                        <Pressable
+                            onPress={() => router.back()}
+                            style={styles.errorButton}
+                        >
+                            <ThemedText style={styles.errorButtonText}>
+                                العودة إلى الصيدليات
+                            </ThemedText>
+                        </Pressable>
+                    </View>
+                </SafeAreaView>
+            </ThemedView>
+        );
+    }
 
     return (
         <ThemedView style={styles.container}>
@@ -107,7 +163,7 @@ export default function PharmacyDetailsScreen() {
                             >
                                 {pharmacy.isOpen
                                     ? 'مفتوحة الآن'
-                                    : 'مغلقة حالياً'}
+                                    : 'مغلقة حاليًا'}
                             </ThemedText>
                         </View>
                     </View>
@@ -164,6 +220,26 @@ export default function PharmacyDetailsScreen() {
 
                     <View style={styles.section}>
                         <ThemedText style={styles.sectionTitle}>
+                            موقع التوصيل
+                        </ThemedText>
+
+                        <View style={styles.orderCard}>
+                            <View style={styles.orderRow}>
+                                <ThemedText style={styles.orderLabel}>
+                                    حالة الموقع
+                                </ThemedText>
+
+                                <ThemedText style={styles.orderValue}>
+                                    {hasLocation
+                                        ? 'تم تحديد موقعك الحالي'
+                                        : 'لم يتم تحديد الموقع'}
+                                </ThemedText>
+                            </View>
+                        </View>
+                    </View>
+
+                    <View style={styles.section}>
+                        <ThemedText style={styles.sectionTitle}>
                             طلبك
                         </ThemedText>
 
@@ -198,13 +274,15 @@ export default function PharmacyDetailsScreen() {
                         style={({ pressed }) => [
                             styles.button,
                             !pharmacy.isOpen && styles.disabledButton,
-                            pressed && pharmacy.isOpen && styles.pressed,
+                            pressed &&
+                                pharmacy.isOpen &&
+                                styles.pressed,
                         ]}
                     >
                         <ThemedText style={styles.buttonText}>
                             {pharmacy.isOpen
                                 ? 'اختيار هذه الصيدلية'
-                                : 'الصيدلية مغلقة حالياً'}
+                                : 'الصيدلية مغلقة حاليًا'}
                         </ThemedText>
 
                         {pharmacy.isOpen && (
@@ -480,5 +558,45 @@ const styles = StyleSheet.create({
                 scale: 0.985,
             },
         ],
+    },
+
+    errorContainer: {
+        flex: 1,
+        paddingHorizontal: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    errorTitle: {
+        fontSize: 21,
+        fontWeight: '800',
+        color: '#5F929C',
+        textAlign: 'center',
+    },
+
+    errorText: {
+        marginTop: 10,
+        fontSize: 14,
+        lineHeight: 22,
+        color: '#83AAB2',
+        textAlign: 'center',
+    },
+
+    errorButton: {
+        minHeight: 52,
+        marginTop: 22,
+        paddingHorizontal: 22,
+        borderRadius: 17,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#45B8CC',
+        borderWidth: 1,
+        borderColor: '#63C7D6',
+    },
+
+    errorButtonText: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '800',
     },
 });
