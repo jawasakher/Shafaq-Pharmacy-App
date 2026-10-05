@@ -43,7 +43,7 @@ export class OrdersController {
 
     @Post('pharmacy-assignments/:assignmentId/accept')
     @UseGuards(InternalIdentityGuard, RolesGuard)
-    @Roles('OWNER', 'PHARMACIST', 'ADMIN')
+    @Roles('OWNER', 'PHARMACIST')
     async acceptAssignment(
         @Req() request: AuthenticatedRequest,
         @Param('assignmentId') assignmentId: string,
@@ -53,7 +53,6 @@ export class OrdersController {
             data: await this.ordersService.acceptPharmacyAssignment(
                 assignmentId,
                 request.user.id,
-                request.user.role,
             ),
         };
     }
