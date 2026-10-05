@@ -15,8 +15,8 @@ import { Roles } from '../identity/roles.decorator.js';
 import { RolesGuard } from '../identity/roles.guard.js';
 
 import { PharmacyService } from './pharmacy.service.js';
+import { PharmacyMemberDto } from './dto/pharmacy-member.dto.js';
 import type { PharmacyApplicationInput } from './pharmacy.service.js';
-import type { PharmacyMemberInput } from './pharmacy.service.js';
 
 @Controller('api/v1/pharmacies')
 export class PharmacyController {
@@ -50,7 +50,7 @@ export class PharmacyController {
     @Post(':pharmacyId/pharmacists')
     async addPharmacist(
         @Req() request: { params: { pharmacyId: string }; user: { id: string; role: string } },
-        @Body() body: PharmacyMemberInput,
+        @Body() body: PharmacyMemberDto,
     ) {
         return {
             success: true,
