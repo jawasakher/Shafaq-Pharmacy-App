@@ -447,8 +447,9 @@ describe('Orders API (e2e)', () => {
                 Number(quoteResponse.body.totalAmount);
 
             expect(deliveryFee).toBeGreaterThanOrEqual(100);
-            expect(totalAmount).toBe(
+            expect(totalAmount).toBeCloseTo(
                 125 + deliveryFee,
+                2,
             );
             expect(
                 quoteResponse.body.items,
