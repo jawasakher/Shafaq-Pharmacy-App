@@ -1,5 +1,6 @@
 import {
     Controller,
+    Get,
     HttpCode,
     HttpStatus,
     Param,
@@ -27,6 +28,24 @@ export class PharmacyAssignmentsController {
         private readonly ordersService: OrdersService,
     ) {}
 
+    @Get('offers')
+    @HttpCode(HttpStatus.OK)
+    @UseGuards(InternalIdentityGuard, RolesGuard)
+    @Roles('OWNER', 'PHARMACIST')
+    async listOffers(
+        @Req() request: AuthenticatedRequest,
+    ) {
+        return {
+            success: true,
+            data: {
+                items:
+                    await this.ordersService.listPharmacyAssignmentOffers(
+                        request.user.id,
+                    ),
+            },
+        };
+    }
+
     @Post(':assignmentId/accept')
     @HttpCode(HttpStatus.OK)
     @UseGuards(InternalIdentityGuard, RolesGuard)
@@ -43,4 +62,22 @@ export class PharmacyAssignmentsController {
             ),
         };
     }
+    @Post(':assignmentId/reject')
+    @HttpCode(HttpStatus.OK)
+    @UseGuards(InternalIdentityGuard, RolesGuard)
+    @Roles('OWNER', 'PHARMACIST')
+    async rejectAssignment(
+        @Req() request: AuthenticatedRequest,
+        @Param('assignmentId') assignmentId: string,
+    ) {
+        return {
+            success: true,
+            data: await this.ordersService.rejectPharmacyAssignment(
+                assignmentId,
+                request.user.id,
+            ),
+        };
+    }
+
 }
+
