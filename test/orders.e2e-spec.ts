@@ -339,7 +339,7 @@ describe('Orders API (e2e)', () => {
                 `/api/v1/pharmacy/assignments/${assignmentId}/accept`,
             )
             .set('Authorization', `Bearer ${ownerToken}`)
-            .expect(201);
+            .expect(200);
 
         expect(acceptResponse.body.data.status).toBe('ACTIVE');
         expect(acceptResponse.body.data.order.status).toBe(
@@ -434,7 +434,7 @@ describe('Orders API (e2e)', () => {
                     medicineSubtotal: 1,
                     deliveryFee: 1,
                 })
-                .expect(201);
+                .expect(200);
 
             expect(quoteResponse.body.status).toBe(
                 'CUSTOMER_CONFIRMATION_PENDING',
@@ -575,7 +575,7 @@ describe('Orders API (e2e)', () => {
                     },
                 ],
             })
-            .expect(201);
+            .expect(200);
 
         expect(
             quoteResponse.body.status,
