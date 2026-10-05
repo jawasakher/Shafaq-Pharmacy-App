@@ -656,6 +656,184 @@ describe('Orders API (e2e)', () => {
         expect(assignment?.status).toBe('OFFERED');
     });
 
+    it('transfers a reviewing order only after the receiving pharmacy accepts', async () => {
+        const customer = await authenticateCustomer();
+        const currentOwner = await createUser('OWNER');
+        const receivingOwner = await createUser('OWNER');
+        const currentPharmacy = await createPharmacy(
+            'APPROVED',
+            'OPEN',
+        );
+        const receivingPharmacy = await createPharmacy(
+            'APPROVED',
+            'OPEN',
+        );
+
+        await prisma.pharmacyMember.createMany({
+            data: [
+                {
+                    pharmacyId: currentPharmacy.id,
+                    userId: currentOwner.id,
+                    role: 'OWNER',
+                    status: 'ACTIVE',
+                },
+                {
+                    pharmacyId: receivingPharmacy.id,
+                    userId: receivingOwner.id,
+                    role: 'OWNER',
+                    status: 'ACTIVE',
+                },
+            ],
+        });
+
+        const createResponse = await request(
+            app.getHttpServer(),
+        )
+            .post('/api/v1/orders')
+            .set(
+                'Authorization',
+                `Bearer ${customer.token}`,
+            )
+            .send({
+                pharmacyId: currentPharmacy.id,
+                deliveryAddress: 'Transfer Test Address',
+                deliveryLatitude: '35.5200000',
+                deliveryLongitude: '35.7800000',
+                items: [
+                    {
+                        medicineName: 'Paracetamol',
+                        quantity: 1,
+                    },
+                ],
+            })
+            .expect(201);
+
+        const orderId =
+            createResponse.body.id as string;
+        const originalAssignmentId =
+            createResponse.body.assignments[0].id as string;
+        createdOrderIds.add(orderId);
+
+        const currentOwnerToken =
+            await createInternalToken(
+                currentOwner.id,
+            );
+        const receivingOwnerToken =
+            await createInternalToken(
+                receivingOwner.id,
+            );
+
+        await request(app.getHttpServer())
+            .post(
+                `/api/v1/pharmacy/assignments/${originalAssignmentId}/accept`,
+            )
+            .set(
+                'Authorization',
+                `Bearer ${currentOwnerToken}`,
+            )
+            .expect(200);
+
+        const transferResponse =
+            await request(app.getHttpServer())
+                .post(
+                    `/api/v1/orders/${orderId}/transfer`,
+                )
+                .set(
+                    'Authorization',
+                    `Bearer ${currentOwnerToken}`,
+                )
+                .send({
+                    targetPharmacyId:
+                        receivingPharmacy.id,
+                })
+                .expect(201);
+
+        const offeredAssignmentId =
+            transferResponse.body.id as string;
+
+        expect(
+            transferResponse.body.status,
+        ).toBe('OFFERED');
+
+        const beforeAcceptance =
+            await prisma.pharmacyAssignment.findMany({
+                where: { orderId },
+                select: {
+                    id: true,
+                    pharmacyId: true,
+                    status: true,
+                },
+                orderBy: {
+                    createdAt: 'asc',
+                },
+            });
+
+        expect(beforeAcceptance).toEqual([
+            expect.objectContaining({
+                id: originalAssignmentId,
+                pharmacyId: currentPharmacy.id,
+                status: 'ACTIVE',
+            }),
+            expect.objectContaining({
+                id: offeredAssignmentId,
+                pharmacyId: receivingPharmacy.id,
+                status: 'OFFERED',
+            }),
+        ]);
+
+        await request(app.getHttpServer())
+            .post(
+                `/api/v1/pharmacy/assignments/${offeredAssignmentId}/accept`,
+            )
+            .set(
+                'Authorization',
+                `Bearer ${receivingOwnerToken}`,
+            )
+            .expect(200);
+
+        const assignments =
+            await prisma.pharmacyAssignment.findMany({
+                where: { orderId },
+                select: {
+                    id: true,
+                    pharmacyId: true,
+                    status: true,
+                },
+                orderBy: {
+                    createdAt: 'asc',
+                },
+            });
+
+        expect(assignments).toEqual([
+            expect.objectContaining({
+                id: originalAssignmentId,
+                pharmacyId: currentPharmacy.id,
+                status: 'TRANSFERRED',
+            }),
+            expect.objectContaining({
+                id: offeredAssignmentId,
+                pharmacyId: receivingPharmacy.id,
+                status: 'ACTIVE',
+            }),
+        ]);
+
+        const order =
+            await prisma.order.findUnique({
+                where: { id: orderId },
+                select: {
+                    status: true,
+                    pharmacyId: true,
+                },
+            });
+
+        expect(order?.status).toBe(
+            'PHARMACY_REVIEWING',
+        );
+        expect(order?.pharmacyId).toBe(
+            currentPharmacy.id,
+        );
+    });
+
     it('rejects assignment acceptance from an inactive pharmacy owner membership', async () => {
         const customer = await authenticateCustomer();
         const owner = await createUser('OWNER');
