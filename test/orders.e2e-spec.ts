@@ -336,7 +336,7 @@ describe('Orders API (e2e)', () => {
             app.getHttpServer(),
         )
             .post(
-                `/api/v1/orders/pharmacy-assignments/${assignmentId}/accept`,
+                `/api/v1/pharmacy/assignments/${assignmentId}/accept`,
             )
             .set('Authorization', `Bearer ${ownerToken}`)
             .expect(201);
@@ -345,6 +345,315 @@ describe('Orders API (e2e)', () => {
         expect(acceptResponse.body.data.order.status).toBe(
             'PHARMACY_REVIEWING',
         );
+    });
+
+    it('allows an active pharmacy member to quote the complete order and moves it to customer confirmation', async () => {
+        const customer = await authenticateCustomer();
+        const owner = await createUser('OWNER');
+        const pharmacy = await createPharmacy('APPROVED', 'OPEN');
+
+        await prisma.pharmacyMember.create({
+            data: {
+                pharmacyId: pharmacy.id,
+                userId: owner.id,
+                role: 'OWNER',
+                status: 'ACTIVE',
+            },
+        });
+
+        const createResponse = await request(
+            app.getHttpServer(),
+        )
+            .post('/api/v1/orders')
+            .set('Authorization', `Bearer ${customer.token}`)
+            .send({
+                pharmacyId: pharmacy.id,
+                deliveryAddress: 'Quote Test Address',
+                deliveryLatitude: '35.5200000',
+                deliveryLongitude: '35.7800000',
+                items: [
+                    {
+                        medicineName: 'Paracetamol',
+                        quantity: 2,
+                    },
+                    {
+                        medicineName: 'Vitamin C',
+                        quantity: 1,
+                    },
+                ],
+            })
+            .expect(201);
+
+        const orderId = createResponse.body.id as string;
+        const assignmentId =
+            createResponse.body.assignments[0].id as string;
+        createdOrderIds.add(orderId);
+
+        const ownerToken = await createInternalToken(owner.id);
+
+        await request(app.getHttpServer())
+            .post(
+                `/api/v1/pharmacy/assignments/${assignmentId}/accept`,
+            )
+            .set('Authorization', `Bearer ${ownerToken}`)
+            .expect(201);
+
+        const previousBase = process.env.SHAFAQ_PRICING_BASE_FEE;
+        const previousPerKm = process.env.SHAFAQ_PRICING_PER_KM;
+        const previousMaxDistance =
+            process.env.SHAFAQ_PRICING_MAX_DISTANCE_KM;
+
+        process.env.SHAFAQ_PRICING_BASE_FEE = '100';
+        process.env.SHAFAQ_PRICING_PER_KM = '10';
+        process.env.SHAFAQ_PRICING_MAX_DISTANCE_KM = '100';
+
+        try {
+            const quoteResponse = await request(
+                app.getHttpServer(),
+            )
+                .post(`/api/v1/orders/${orderId}/quote`)
+                .set(
+                    'Authorization',
+                    `Bearer ${ownerToken}`,
+                )
+                .send({
+                    items: [
+                        {
+                            orderItemId:
+                                createResponse.body.items[0].id,
+                            available: true,
+                            unitPrice: 50,
+                        },
+                        {
+                            orderItemId:
+                                createResponse.body.items[1].id,
+                            available: true,
+                            unitPrice: 25,
+                        },
+                    ],
+                    medicineSubtotal: 1,
+                    deliveryFee: 1,
+                })
+                .expect(201);
+
+            expect(quoteResponse.body.status).toBe(
+                'CUSTOMER_CONFIRMATION_PENDING',
+            );
+            expect(
+                quoteResponse.body.medicineSubtotal,
+            ).toBe('125');
+            expect(
+                quoteResponse.body.currency,
+            ).toBe('SYP');
+
+            const deliveryFee =
+                Number(quoteResponse.body.deliveryFee);
+            const totalAmount =
+                Number(quoteResponse.body.totalAmount);
+
+            expect(deliveryFee).toBeGreaterThanOrEqual(100);
+            expect(totalAmount).toBe(
+                125 + deliveryFee,
+            );
+            expect(
+                quoteResponse.body.items,
+            ).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        status: 'AVAILABLE',
+                        unitPrice: '50',
+                        totalPrice: '100',
+                    }),
+                    expect.objectContaining({
+                        status: 'AVAILABLE',
+                        unitPrice: '25',
+                        totalPrice: '25',
+                    }),
+                ]),
+            );
+        } finally {
+            if (previousBase === undefined) {
+                delete process.env.SHAFAQ_PRICING_BASE_FEE;
+            } else {
+                process.env.SHAFAQ_PRICING_BASE_FEE =
+                    previousBase;
+            }
+
+            if (previousPerKm === undefined) {
+                delete process.env.SHAFAQ_PRICING_PER_KM;
+            } else {
+                process.env.SHAFAQ_PRICING_PER_KM =
+                    previousPerKm;
+            }
+
+            if (previousMaxDistance === undefined) {
+                delete process.env.SHAFAQ_PRICING_MAX_DISTANCE_KM;
+            } else {
+                process.env.SHAFAQ_PRICING_MAX_DISTANCE_KM =
+                    previousMaxDistance;
+            }
+        }
+    });
+
+    it('does not finalize pricing when any requested medicine is unavailable', async () => {
+        const customer = await authenticateCustomer();
+        const pharmacist = await createUser('PHARMACIST');
+        const pharmacy = await createPharmacy('APPROVED', 'OPEN');
+
+        await prisma.pharmacyMember.create({
+            data: {
+                pharmacyId: pharmacy.id,
+                userId: pharmacist.id,
+                role: 'PHARMACIST',
+                status: 'ACTIVE',
+            },
+        });
+
+        const createResponse = await request(
+            app.getHttpServer(),
+        )
+            .post('/api/v1/orders')
+            .set('Authorization', `Bearer ${customer.token}`)
+            .send({
+                pharmacyId: pharmacy.id,
+                deliveryAddress: 'Unavailable Medicine Address',
+                deliveryLatitude: '35.5200000',
+                deliveryLongitude: '35.7800000',
+                items: [
+                    {
+                        medicineName: 'Paracetamol',
+                        quantity: 1,
+                    },
+                    {
+                        medicineName: 'Medicine X',
+                        quantity: 1,
+                    },
+                ],
+            })
+            .expect(201);
+
+        const orderId = createResponse.body.id as string;
+        const assignmentId =
+            createResponse.body.assignments[0].id as string;
+        createdOrderIds.add(orderId);
+
+        const pharmacistToken =
+            await createInternalToken(
+                pharmacist.id,
+            );
+
+        await request(app.getHttpServer())
+            .post(
+                `/api/v1/pharmacy/assignments/${assignmentId}/accept`,
+            )
+            .set(
+                'Authorization',
+                `Bearer ${pharmacistToken}`,
+            )
+            .expect(201);
+
+        const quoteResponse = await request(
+            app.getHttpServer(),
+        )
+            .post(`/api/v1/orders/${orderId}/quote`)
+            .set(
+                'Authorization',
+                `Bearer ${pharmacistToken}`,
+            )
+            .send({
+                items: [
+                    {
+                        orderItemId:
+                            createResponse.body.items[0].id,
+                        available: true,
+                        unitPrice: 50,
+                    },
+                    {
+                        orderItemId:
+                            createResponse.body.items[1].id,
+                        available: false,
+                    },
+                ],
+            })
+            .expect(201);
+
+        expect(
+            quoteResponse.body.status,
+        ).toBe('PHARMACY_REVIEWING');
+        expect(
+            quoteResponse.body.medicineSubtotal,
+        ).toBeNull();
+        expect(
+            quoteResponse.body.totalAmount,
+        ).toBeNull();
+
+        expect(
+            quoteResponse.body.items,
+        ).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    status: 'AVAILABLE',
+                    unitPrice: '50',
+                    totalPrice: '50',
+                }),
+                expect.objectContaining({
+                    status: 'UNAVAILABLE',
+                    unitPrice: null,
+                    totalPrice: null,
+                }),
+            ]),
+        );
+    });
+
+    it('rejects ADMIN from normal pharmacy assignment acceptance', async () => {
+        const customer = await authenticateCustomer();
+        const admin = await createUser('ADMIN');
+        const pharmacy = await createPharmacy('APPROVED', 'OPEN');
+
+        const createResponse = await request(
+            app.getHttpServer(),
+        )
+            .post('/api/v1/orders')
+            .set('Authorization', `Bearer ${customer.token}`)
+            .send({
+                pharmacyId: pharmacy.id,
+                deliveryAddress: 'Admin Assignment Address',
+                deliveryLatitude: '35.5200000',
+                deliveryLongitude: '35.7800000',
+                items: [
+                    {
+                        medicineName: 'Paracetamol',
+                        quantity: 1,
+                    },
+                ],
+            })
+            .expect(201);
+
+        const orderId = createResponse.body.id as string;
+        const assignmentId =
+            createResponse.body.assignments[0].id as string;
+        createdOrderIds.add(orderId);
+
+        const adminToken =
+            await createInternalToken(admin.id);
+
+        await request(app.getHttpServer())
+            .post(
+                `/api/v1/pharmacy/assignments/${assignmentId}/accept`,
+            )
+            .set(
+                'Authorization',
+                `Bearer ${adminToken}`,
+            )
+            .expect(403);
+
+        const assignment =
+            await prisma.pharmacyAssignment.findUnique({
+                where: { id: assignmentId },
+                select: { status: true },
+            });
+
+        expect(assignment?.status).toBe('OFFERED');
     });
 
     it('rejects assignment acceptance from an inactive pharmacy owner membership', async () => {
