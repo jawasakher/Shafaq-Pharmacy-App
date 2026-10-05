@@ -1,0 +1,2033 @@
+openapi: 3.1.0
+info:
+  title: Shafaq Pharmacy Delivery & Consultation API
+  version: 1.2.0
+  description: |
+    Canonical API contract for Shafaq v1.2.
+    Backend is the authoritative source of truth for authorization,
+    state transitions, ownership, payment, delivery, and consultation privacy.
+
+servers:
+  - url: /api/v1
+    description: API v1
+
+tags:
+  - name: Health
+  - name: Identity
+  - name: Addresses
+  - name: Pharmacies
+  - name: Orders
+  - name: Pharmacy Assignments
+  - name: Prescriptions
+  - name: Payments
+  - name: Deliveries
+  - name: Drivers
+  - name: Consultations
+  - name: Notifications
+  - name: Admin
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      security: []
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+                requestId: req_01
+                data:
+                  status: ok
+
+  /auth/otp/request:
+    post:
+      tags: [Identity]
+      security: []
+      summary: Request phone OTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpRequest'
+      responses:
+        '200':
+          description: OTP request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /auth/otp/verify:
+    post:
+      tags: [Identity]
+      security: []
+      summary: Verify phone OTP and establish a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpVerify'
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /me:
+    get:
+      tags: [Identity]
+      summary: Get current authenticated user
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /addresses:
+    get:
+      tags: [Addresses]
+      summary: List current user's addresses
+      responses:
+        '200':
+          description: Address list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddressListResponse'
+    post:
+      tags: [Addresses]
+      summary: Create an address for the current user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddressInput'
+      responses:
+        '201':
+          description: Address created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /addresses/{addressId}:
+    parameters:
+      - $ref: '#/components/parameters/AddressId'
+    patch:
+      tags: [Addresses]
+      summary: Update an owned address
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddressInput'
+      responses:
+        '200':
+          description: Address updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Addresses]
+      summary: Delete an owned address
+      responses:
+        '204':
+          description: Address deleted
+
+  /pharmacies:
+    get:
+      tags: [Pharmacies]
+      security: []
+      summary: List pharmacies available to customers
+      description: |
+        Customer discovery must return pharmacies that are APPROVED and OPEN.
+        Internal/admin endpoints may expose additional statuses.
+      parameters:
+        - $ref: '#/components/parameters/Latitude'
+        - $ref: '#/components/parameters/Longitude'
+        - $ref: '#/components/parameters/RadiusKm'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Pharmacy list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PharmacyListResponse'
+
+  /pharmacies/{pharmacyId}:
+    parameters:
+      - $ref: '#/components/parameters/PharmacyId'
+    get:
+      tags: [Pharmacies]
+      security: []
+      summary: Get a pharmacy
+      responses:
+        '200':
+          description: Pharmacy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /pharmacies/applications:
+    post:
+      tags: [Pharmacies]
+      summary: Submit a pharmacy registration application
+      description: |
+        Creates a pharmacy with PENDING_APPROVAL status.
+        The applicant becomes an OWNER pharmacy membership when accepted
+        according to the identity and membership rules.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PharmacyApplicationInput'
+      responses:
+        '201':
+          description: Application submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /orders:
+    get:
+      tags: [Orders]
+      summary: List orders visible to the current user
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/OrderStatus'
+      responses:
+        '200':
+          description: Order list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderListResponse'
+    post:
+      tags: [Orders]
+      summary: Create a medicine order
+      description: |
+        Customer selects one pharmacy and submits one order.
+        The backend validates pharmacy approval and OPEN status.
+        `Order.pharmacyId` records the original pharmacy selected by the
+        customer. It remains unchanged if the order is transferred and is not
+        the source of current pharmacy responsibility. Current responsibility
+        is resolved from the single ACTIVE PharmacyAssignment.
+        One order is fulfilled by one responsible pharmacy at a time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderInput'
+      responses:
+        '201':
+          description: Order created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /orders/{orderId}:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      tags: [Orders]
+      summary: Get an order visible to the current user
+      responses:
+        '200':
+          description: Order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /orders/{orderId}/price-response:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      tags: [Orders]
+      summary: Customer accepts or rejects a pharmacy price
+      description: |
+        Valid only while the order is CUSTOMER_CONFIRMATION_PENDING.
+        Rejecting the price closes the order. A normal refund/cancellation
+        path is not implied by this endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision:
+                  type: string
+                  enum: [ACCEPT, REJECT]
+      responses:
+        '200':
+          description: Decision accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /orders/{orderId}/assignments:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      tags: [Pharmacy Assignments]
+      summary: List assignment history for an order
+      responses:
+        '200':
+          description: Assignment history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentListResponse'
+
+  /orders/{orderId}/transfer:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      tags: [Pharmacy Assignments]
+      summary: Transfer an order to another pharmacy
+      description: |
+        The current responsible pharmacy may request a transfer according
+        to business rules. The new pharmacy must explicitly accept the offer.
+        The original Order, including `Order.pharmacyId`, remains unchanged.
+        The receiving pharmacy is represented by a new PharmacyAssignment and
+        becomes responsible only when that assignment becomes ACTIVE.
+        There must be no simultaneous ACTIVE assignments.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetPharmacyId]
+              properties:
+                targetPharmacyId:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          description: Transfer offer created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /pharmacy/assignments/offers:
+    get:
+      tags: [Pharmacy Assignments]
+      summary: List pending pharmacy assignment offers
+      description: Visible only to active members of the target pharmacy.
+      responses:
+        '200':
+          description: Pending offers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentListResponse'
+
+  /pharmacy/assignments/{assignmentId}/accept:
+    parameters:
+      - $ref: '#/components/parameters/AssignmentId'
+    post:
+      tags: [Pharmacy Assignments]
+      summary: Accept a pharmacy assignment
+      responses:
+        '200':
+          description: Assignment accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /pharmacy/assignments/{assignmentId}/reject:
+    parameters:
+      - $ref: '#/components/parameters/AssignmentId'
+    post:
+      tags: [Pharmacy Assignments]
+      summary: Reject a pharmacy assignment
+      responses:
+        '200':
+          description: Assignment rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentResponse'
+
+  /pharmacy/orders:
+    get:
+      tags: [Orders]
+      summary: List orders visible to the current pharmacy
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/OrderStatus'
+      responses:
+        '200':
+          description: Pharmacy order list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderListResponse'
+
+  /pharmacy/orders/{orderId}/review:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      tags: [Orders]
+      summary: Start pharmacy order review
+      responses:
+        '200':
+          description: Order moved to pharmacy review
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+
+  /pharmacy/orders/{orderId}/quote:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      tags: [Orders]
+      summary: Submit pharmacy price and availability decision
+      description: |
+        The quote evaluates the complete original order. Partial fulfillment
+        is not supported. If any requested item is unavailable, the pharmacy
+        must not confirm only the available items and must not remove the
+        unavailable items from the order. The pharmacy may reject or request
+        transfer of the complete order according to the transfer workflow.
+        `medicineSubtotal` is authoritative only when the complete order is
+        fulfillable and the order can proceed to PHARMACY_CONFIRMED. The
+        backend recalculates it as the sum of persisted OrderItem.totalPrice
+        values, where each total is quantity multiplied by unitPrice.
+        Client-supplied medicineSubtotal and deliveryFee values are accepted
+        only for request compatibility and are never authoritative.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PharmacyQuoteInput'
+      responses:
+        '200':
+          description: Quote submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /prescriptions:
+    post:
+      tags: [Prescriptions]
+      summary: Create a prescription upload
+      description: |
+        Prescription content is private. The API must return only access
+        information authorized for the current customer or assigned pharmacist.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [orderId, file]
+              properties:
+                orderId:
+                  type: string
+                  format: uuid
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Prescription created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /orders/{orderId}/prescriptions:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      tags: [Prescriptions]
+      summary: List prescriptions for an order
+      responses:
+        '200':
+          description: Authorized prescription metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /payments:
+    post:
+      tags: [Payments]
+      summary: Create a payment attempt
+      description: |
+        Payment is abstracted behind a provider adapter. Provider-specific
+        authentication, API fields, and webhook contracts are defined outside
+        this generic API contract until officially verified.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentInput'
+      responses:
+        '201':
+          description: Payment attempt created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /payments/{paymentId}:
+    parameters:
+      - $ref: '#/components/parameters/PaymentId'
+    get:
+      tags: [Payments]
+      summary: Get payment status
+      responses:
+        '200':
+          description: Payment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+
+  /payments/webhooks/{provider}:
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [Payments]
+      security: []
+      summary: Receive a verified payment provider webhook
+      description: |
+        Webhook events must be authenticated according to the provider's
+        official contract, stored idempotently, and reconciled into the
+        internal payment state machine. UNKNOWN is not treated as FAILED.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Webhook accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /drivers/me:
+    get:
+      tags: [Drivers]
+      summary: Get current driver's profile and status
+      responses:
+        '200':
+          description: Driver profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /drivers/me/availability:
+    patch:
+      tags: [Drivers]
+      summary: Change driver availability
+      description: |
+        Driver availability is controlled by backend state rules.
+        A driver cannot become AVAILABLE unless approval status is APPROVED.
+        BUSY is controlled by active delivery/exception state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [availabilityStatus]
+              properties:
+                availabilityStatus:
+                  $ref: '#/components/schemas/DriverAvailabilityStatus'
+      responses:
+        '200':
+          description: Availability updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /deliveries:
+    get:
+      tags: [Deliveries]
+      summary: List deliveries visible to the current user
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Delivery list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryListResponse'
+
+  /deliveries/{deliveryId}:
+    parameters:
+      - $ref: '#/components/parameters/DeliveryId'
+    get:
+      tags: [Deliveries]
+      summary: Get delivery status
+      responses:
+        '200':
+          description: Delivery
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryResponse'
+
+  /deliveries/{deliveryId}/accept:
+    parameters:
+      - $ref: '#/components/parameters/DeliveryId'
+    post:
+      tags: [Deliveries]
+      summary: Driver accepts a delivery offer
+      description: |
+        First valid acceptance wins. The backend must enforce this
+        atomically so that only one driver becomes active for an order.
+      responses:
+        '200':
+          description: Delivery assigned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /deliveries/{deliveryId}/arrive-pharmacy:
+    parameters:
+      - $ref: '#/components/parameters/DeliveryId'
+    post:
+      tags: [Deliveries]
+      summary: Driver confirms arrival at pharmacy
+      responses:
+        '200':
+          description: Delivery updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryResponse'
+
+  /deliveries/{deliveryId}/handover/confirm:
+    parameters:
+      - $ref: '#/components/parameters/DeliveryId'
+    post:
+      tags: [Deliveries]
+      summary: Confirm pharmacy-driver handover step
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [actor]
+              properties:
+                actor:
+                  type: string
+                  enum: [PHARMACY, DRIVER]
+      responses:
+        '200':
+          description: Handover state updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryResponse'
+
+  /deliveries/{deliveryId}/pickup:
+    parameters:
+      - $ref: '#/components/parameters/DeliveryId'
+    post:
+      tags: [Deliveries]
+      summary: Confirm medicine pickup
+      responses:
+        '200':
+          description: Delivery is picked up
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryResponse'
+
+  /deliveries/{deliveryId}/status:
+    parameters:
+      - $ref: '#/components/parameters/DeliveryId'
+    post:
+      tags: [Deliveries]
+      summary: Advance delivery through an allowed state transition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  $ref: '#/components/schemas/DeliveryStatus'
+      responses:
+        '200':
+          description: Delivery updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /deliveries/{deliveryId}/otp/verify:
+    parameters:
+      - $ref: '#/components/parameters/DeliveryId'
+    post:
+      tags: [Deliveries]
+      summary: Verify delivery OTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [otp]
+              properties:
+                otp:
+                  type: string
+                  minLength: 4
+                  maxLength: 10
+      responses:
+        '200':
+          description: OTP accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /deliveries/{deliveryId}/cash:
+    parameters:
+      - $ref: '#/components/parameters/DeliveryId'
+    post:
+      tags: [Deliveries]
+      summary: Record cash collection outcome
+      description: |
+        Cash resolution is separate from the DELIVERED state.
+        The driver remains BUSY until cash is resolved or an explicit
+        exception is resolved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CashInput'
+      responses:
+        '200':
+          description: Cash state updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /consultations:
+    get:
+      tags: [Consultations]
+      summary: List consultations visible to the current user
+      description: |
+        Pharmacists see only consultations assigned to them.
+        Customers see their own consultations.
+        Admins do not receive consultation chat content through normal
+        administrative access.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Consultation list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsultationListResponse'
+    post:
+      tags: [Consultations]
+      summary: Create a consultation request
+      description: Only one active consultation is allowed per customer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConsultationInput'
+      responses:
+        '201':
+          description: Consultation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsultationResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /consultations/{consultationId}:
+    parameters:
+      - $ref: '#/components/parameters/ConsultationId'
+    get:
+      tags: [Consultations]
+      summary: Get an authorized consultation
+      responses:
+        '200':
+          description: Consultation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsultationResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /consultations/{consultationId}/messages:
+    parameters:
+      - $ref: '#/components/parameters/ConsultationId'
+    get:
+      tags: [Consultations]
+      summary: Get private consultation messages
+      description: Only the customer and assigned pharmacist may access content.
+      responses:
+        '200':
+          description: Private messages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageListResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Consultations]
+      summary: Send a private consultation message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 5000
+      responses:
+        '201':
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: List current user's notifications
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Notification list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationListResponse'
+
+  /admin/pharmacies:
+    get:
+      tags: [Admin]
+      summary: List pharmacies for administration
+      description: Admin only. Includes approval and operational status.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Admin pharmacy list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PharmacyListResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/pharmacies/{pharmacyId}/approval:
+    parameters:
+      - $ref: '#/components/parameters/PharmacyId'
+    patch:
+      tags: [Admin]
+      summary: Approve, reject, or suspend a pharmacy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approvalStatus]
+              properties:
+                approvalStatus:
+                  $ref: '#/components/schemas/PharmacyApprovalStatus'
+                reason:
+                  type: string
+                  maxLength: 1000
+      responses:
+        '200':
+          description: Pharmacy approval updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/drivers:
+    get:
+      tags: [Admin]
+      summary: List drivers for administration
+      responses:
+        '200':
+          description: Driver list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /admin/drivers/{driverId}/approval:
+    parameters:
+      - $ref: '#/components/parameters/DriverId'
+    patch:
+      tags: [Admin]
+      summary: Approve, reject, or suspend a driver
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approvalStatus]
+              properties:
+                approvalStatus:
+                  $ref: '#/components/schemas/DriverApprovalStatus'
+                reason:
+                  type: string
+                  maxLength: 1000
+      responses:
+        '200':
+          description: Driver approval updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /admin/orders:
+    get:
+      tags: [Admin]
+      summary: List orders for administration
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/OrderStatus'
+      responses:
+        '200':
+          description: Admin order list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderListResponse'
+
+  /admin/audit-logs:
+    get:
+      tags: [Admin]
+      summary: List audit logs
+      description: Audit metadata may be visible to Admin, but consultation message content is not exposed.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Audit log list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogListResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Secure backend session/access token. Production internal users require MFA.
+
+  parameters:
+    AddressId:
+      name: addressId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PharmacyId:
+      name: pharmacyId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AssignmentId:
+      name: assignmentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PaymentId:
+      name: paymentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DeliveryId:
+      name: deliveryId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ConsultationId:
+      name: consultationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DriverId:
+      name: driverId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    Latitude:
+      name: latitude
+      in: query
+      schema:
+        type: number
+        format: double
+        minimum: -90
+        maximum: 90
+    Longitude:
+      name: longitude
+      in: query
+      schema:
+        type: number
+        format: double
+        minimum: -180
+        maximum: 180
+    RadiusKm:
+      name: radiusKm
+      in: query
+      schema:
+        type: number
+        format: double
+        minimum: 0
+    OrderStatus:
+      name: status
+      in: query
+      schema:
+        $ref: '#/components/schemas/OrderStatus'
+
+  responses:
+    BadRequest:
+      description: Invalid request or invalid state transition
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Authenticated but not authorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Business conflict or concurrent state change
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    RateLimited:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    SuccessResponse:
+      type: object
+      required: [success, requestId, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        requestId:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+
+    ErrorResponse:
+      type: object
+      required: [success, requestId, error]
+      properties:
+        success:
+          type: boolean
+          const: false
+        requestId:
+          type: string
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+
+    OtpRequest:
+      type: object
+      required: [phone]
+      properties:
+        phone:
+          type: string
+          minLength: 7
+          maxLength: 20
+
+    OtpVerify:
+      type: object
+      required: [phone, otp]
+      properties:
+        phone:
+          type: string
+        otp:
+          type: string
+          minLength: 4
+          maxLength: 10
+
+    AuthResponse:
+      type: object
+      required: [success, requestId, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        requestId:
+          type: string
+        data:
+          type: object
+          required: [accessToken, user]
+          properties:
+            accessToken:
+              type: string
+            user:
+              $ref: '#/components/schemas/User'
+
+    User:
+      type: object
+      required: [id, phone, role]
+      properties:
+        id:
+          type: string
+          format: uuid
+        phone:
+          type: string
+        name:
+          type: string
+          nullable: true
+        role:
+          $ref: '#/components/schemas/UserRole'
+
+    AddressInput:
+      type: object
+      required: [type, address, latitude, longitude]
+      properties:
+        type:
+          $ref: '#/components/schemas/AddressType'
+        label:
+          type: string
+          maxLength: 100
+        address:
+          type: string
+          minLength: 1
+          maxLength: 500
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        isDefault:
+          type: boolean
+
+    Address:
+      allOf:
+        - $ref: '#/components/schemas/AddressInput'
+        - type: object
+          required: [id, userId]
+          properties:
+            id:
+              type: string
+              format: uuid
+            userId:
+              type: string
+              format: uuid
+
+    AddressListResponse:
+      type: object
+      required: [success, requestId, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        requestId:
+          type: string
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Address'
+            nextCursor:
+              type: string
+              nullable: true
+
+    PharmacyApplicationInput:
+      type: object
+      required: [name, address, latitude, longitude]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 200
+        phone:
+          type: string
+          maxLength: 20
+        address:
+          type: string
+          maxLength: 500
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+
+    Pharmacy:
+      type: object
+      required: [id, name, latitude, longitude, approvalStatus, operationalStatus]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        approvalStatus:
+          $ref: '#/components/schemas/PharmacyApprovalStatus'
+        operationalStatus:
+          $ref: '#/components/schemas/PharmacyOperationalStatus'
+
+    PharmacyListResponse:
+      type: object
+      required: [success, requestId, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        requestId:
+          type: string
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Pharmacy'
+            nextCursor:
+              type: string
+              nullable: true
+
+    CreateOrderInput:
+      type: object
+      required: [pharmacyId, items, deliveryAddress]
+      properties:
+        pharmacyId:
+          type: string
+          format: uuid
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/OrderItemInput'
+        deliveryAddress:
+          $ref: '#/components/schemas/DeliveryAddressSnapshot'
+        prescriptionId:
+          type: string
+          format: uuid
+          nullable: true
+        notes:
+          type: string
+          maxLength: 2000
+
+    OrderItemInput:
+      type: object
+      required: [medicineName, quantity]
+      properties:
+        medicineName:
+          type: string
+          minLength: 1
+          maxLength: 300
+        quantity:
+          type: integer
+          minimum: 1
+        notes:
+          type: string
+          maxLength: 500
+
+    DeliveryAddressSnapshot:
+      type: object
+      required: [address, latitude, longitude]
+      properties:
+        address:
+          type: string
+          maxLength: 500
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+
+    PharmacyQuoteInput:
+      type: object
+      required: [items, medicineSubtotal, deliveryFee]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [orderItemId, available, unitPrice]
+            properties:
+              orderItemId:
+                type: string
+                format: uuid
+              available:
+                type: boolean
+              unitPrice:
+                type: number
+                format: double
+                minimum: 0
+        medicineSubtotal:
+          type: number
+          format: double
+          minimum: 0
+        deliveryFee:
+          type: number
+          format: double
+          minimum: 0
+        notes:
+          type: string
+          maxLength: 2000
+      description: |
+        Every requested order item must be evaluated. An unavailable item does
+        not authorize partial fulfillment or partial customer confirmation.
+        The complete order remains the unit offered to a receiving pharmacy
+        during transfer. For a fully fulfillable order, the backend calculates
+        `medicineSubtotal` from item totals and calculates `totalAmount` as
+        `medicineSubtotal + deliveryFee` using authoritative delivery pricing.
+
+    Order:
+      type: object
+      required: [id, status, customerId, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        deliveryAddress:
+          $ref: '#/components/schemas/DeliveryAddressSnapshot'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        total:
+          type: number
+          format: double
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    OrderItem:
+      type: object
+      required: [id, medicineName, quantity]
+      properties:
+        id:
+          type: string
+          format: uuid
+        medicineName:
+          type: string
+        quantity:
+          type: integer
+        unitPrice:
+          type: number
+          format: double
+          nullable: true
+        available:
+          type: boolean
+          nullable: true
+
+    OrderResponse:
+      type: object
+      required: [success, requestId, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        requestId:
+          type: string
+        data:
+          $ref: '#/components/schemas/Order'
+
+    OrderListResponse:
+      type: object
+      required: [success, requestId, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        requestId:
+          type: string
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Order'
+            nextCursor:
+              type: string
+              nullable: true
+
+    Assignment:
+      type: object
+      required: [id, orderId, pharmacyId, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        orderId:
+          type: string
+          format: uuid
+        pharmacyId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/AssignmentStatus'
+        createdAt:
+          type: string
+          format: date-time
+
+    AssignmentResponse:
+      type: object
+      required: [success, requestId, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        requestId:
+          type: string
+        data:
+          $ref: '#/components/schemas/Assignment'
+
+    AssignmentListResponse:
+      type: object
+      required: [success, requestId, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        requestId:
+          type: string
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Assignment'
+
+    Payment:
+      type: object
+      required: [id, orderId, status, amount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        orderId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        amount:
+          type: number
+          format: double
+        currency:
+          type: string
+        provider:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    CreatePaymentInput:
+      type: object
+      required: [orderId, amount]
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: double
+          minimum: 0
+
+    PaymentResponse:
+      type: object
+      required: [success, requestId, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        requestId:
+          type: string
+        data:
+          $ref: '#/components/schemas/Payment'
+
+    Delivery:
+      type: object
+      required: [id, orderId, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        orderId:
+          type: string
+          format: uuid
+        driverId:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          $ref: '#/components/schemas/DeliveryStatus'
+        cashStatus:
+          $ref: '#/components/schemas/CashStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DeliveryResponse:
+      type: object
+      required: [success, requestId, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        requestId:
+          type: string
+        data:
+          $ref: '#/components/schemas/Delivery'
+
+    DeliveryListResponse:
+      type: object
+      required: [success, requestId, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        requestId:
+          type: string
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Delivery'
+            nextCursor:
+              type: string
+              nullable: true
+
+    CashInput:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/CashStatus'
+        amountReceived:
+          type: number
+          format: double
+          minimum: 0
+        note:
+          type: string
+          maxLength: 1000
+
+    CreateConsultationInput:
+      type: object
+      required: [symptoms, duration, age, currentMedications, allergies]
+      properties:
+        symptoms:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        duration:
+          type: string
+          maxLength: 500
+        age:
+          type: integer
+          minimum: 0
+          maximum: 130
+        currentMedications:
+          type: string
+          maxLength: 3000
+        allergies:
+          type: string
+          maxLength: 3000
+        details:
+          type: string
+          maxLength: 5000
+
+    Consultation:
+      type: object
+      required: [id, customerId, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+          format: uuid
+        assignedPharmacistId:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          $ref: '#/components/schemas/ConsultationStatus'
+        createdAt:
+          type: string
+          format: date-time
+
+    ConsultationResponse:
+      type: object
+      required: [success, requestId, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        requestId:
+          type: string
+        data:
+          $ref: '#/components/schemas/Consultation'
+
+    ConsultationListResponse:
+      type: object
+      required: [success, requestId, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        requestId:
+          type: string
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Consultation'
+            nextCursor:
+              type: string
+              nullable: true
+
+    ConsultationMessage:
+      type: object
+      required: [id, consultationId, senderUserId, body, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        consultationId:
+          type: string
+          format: uuid
+        senderUserId:
+          type: string
+          format: uuid
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    MessageListResponse:
+      type: object
+      required: [success, requestId, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        requestId:
+          type: string
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/ConsultationMessage'
+            nextCursor:
+              type: string
+              nullable: true
+
+    Notification:
+      type: object
+      required: [id, type, title, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    NotificationListResponse:
+      type: object
+      required: [success, requestId, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        requestId:
+          type: string
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Notification'
+            nextCursor:
+              type: string
+              nullable: true
+
+    AuditLog:
+      type: object
+      required: [id, action, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        actorUserId:
+          type: string
+          format: uuid
+          nullable: true
+        action:
+          type: string
+        entityType:
+          type: string
+        entityId:
+          type: string
+          nullable: true
+        requestId:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+
+    AuditLogListResponse:
+      type: object
+      required: [success, requestId, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        requestId:
+          type: string
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AuditLog'
+            nextCursor:
+              type: string
+              nullable: true
+
+    UserRole:
+      type: string
+      enum: [CUSTOMER, OWNER, PHARMACIST, DRIVER, ADMIN]
+
+    AddressType:
+      type: string
+      enum: [HOME, WORK, OTHER]
+
+    PharmacyApprovalStatus:
+      type: string
+      enum: [PENDING_APPROVAL, APPROVED, REJECTED, SUSPENDED]
+
+    PharmacyOperationalStatus:
+      type: string
+      enum: [OPEN, CLOSED]
+
+    DriverApprovalStatus:
+      type: string
+      enum: [PENDING_APPROVAL, APPROVED, REJECTED, SUSPENDED]
+
+    DriverAvailabilityStatus:
+      type: string
+      enum: [OFFLINE, AVAILABLE, BUSY]
+
+    OrderStatus:
+      type: string
+      enum:
+        - PENDING
+        - PHARMACY_REVIEWING
+        - PHARMACY_CONFIRMED
+        - CUSTOMER_CONFIRMATION_PENDING
+        - PAYMENT_PENDING
+        - PAID
+        - PHARMACY_PREPARING
+        - READY_FOR_PICKUP
+        - IN_DELIVERY
+        - DELIVERED
+        - COMPLETED
+        - CLOSED
+
+    AssignmentStatus:
+      type: string
+      enum:
+        - OFFERED
+        - ACTIVE
+        - REJECTED
+        - EXPIRED
+        - CANCELLED
+        - COMPLETED
+        - TRANSFERRED
+
+    PaymentStatus:
+      type: string
+      enum:
+        - PENDING
+        - PROCESSING
+        - PAID
+        - FAILED
+        - UNKNOWN
+        - REFUNDED
+
+    DeliveryStatus:
+      type: string
+      enum:
+        - NOT_STARTED
+        - SEARCHING_FOR_DRIVER
+        - DRIVER_ASSIGNED
+        - GOING_TO_PHARMACY
+        - ARRIVED_AT_PHARMACY
+        - HANDOVER_PENDING
+        - PICKED_UP
+        - ON_THE_WAY
+        - ARRIVING_SOON
+        - OTP_PENDING
+        - DELIVERED
+        - CASH_PENDING
+        - COMPLETED
+
+    CashStatus:
+      type: string
+      enum:
+        - NOT_DUE
+        - DUE
+        - RECEIVED
+        - UNPAID
+        - PARTIALLY_PAID
+        - DISPUTED
+
+    ConsultationStatus:
+      type: string
+      enum:
+        - REQUESTED
+        - ASSIGNED
+        - IN_PROGRESS
+        - WAITING_FOR_CUSTOMER
+        - COMPLETED
+        - CANCELLED
+        - EXPIRED
