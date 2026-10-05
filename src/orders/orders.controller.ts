@@ -16,6 +16,7 @@ import { RolesGuard } from '../identity/roles.guard.js';
 import { Roles } from '../identity/roles.decorator.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
 import { PharmacyQuoteDto } from './dto/pharmacy-quote.dto.js';
+import { TransferOrderDto } from './dto/transfer-order.dto.js';
 import { PriceResponseDto } from './dto/price-response.dto.js';
 import { OrdersService } from './orders.service.js';
 
@@ -58,6 +59,21 @@ export class OrdersController {
             orderId,
             request.user.id,
             dto.decision,
+        );
+    }
+
+    @Post(':orderId/transfer')
+    @UseGuards(InternalIdentityGuard, RolesGuard)
+    @Roles('OWNER', 'PHARMACIST')
+    async transferOrder(
+        @Req() request: AuthenticatedRequest,
+        @Param('orderId') orderId: string,
+        @Body() dto: TransferOrderDto,
+    ) {
+        return this.ordersService.requestOrderTransfer(
+            orderId,
+            request.user.id,
+            dto.targetPharmacyId,
         );
     }
 
