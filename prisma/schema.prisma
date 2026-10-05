@@ -165,6 +165,7 @@ model Pharmacy {
   members             PharmacyMember[]
   orders              Order[]
   pharmacyAssignments PharmacyAssignment[]
+  pricingOriginOrders Order[]                @relation("OrderPricingOriginPharmacy")
 
   @@index([approvalStatus])
   @@index([operationalStatus])
@@ -227,6 +228,21 @@ model Order {
   deliveryLatitude  Decimal     @db.Decimal(10, 7)
   deliveryLongitude Decimal     @db.Decimal(10, 7)
   medicineSubtotal  Decimal?    @db.Decimal(12, 2)
+  deliveryFee       Decimal?    @db.Decimal(12, 2)
+  totalAmount       Decimal?    @db.Decimal(12, 2)
+  currency          String      @db.VarChar(3) @default("SYP")
+  pricingConfigurationVersion String?
+  pricingStrategy             String?
+  pricingConfigurationRef     String?
+  pricingOriginPharmacyId     String?
+  pricingOriginPharmacy       Pharmacy? @relation("OrderPricingOriginPharmacy", fields: [pricingOriginPharmacyId], references: [id], onDelete: Restrict)
+  pricingOriginLatitude       Decimal? @db.Decimal(10, 7)
+  pricingOriginLongitude      Decimal? @db.Decimal(10, 7)
+  pricingDistance             Decimal?
+  pricingDistanceUnit         String?
+  pricingCalculatedAt         DateTime?
+  pricingQuoteAt              DateTime?
+  pricingSupported            Boolean?
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
