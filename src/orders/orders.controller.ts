@@ -1,6 +1,8 @@
 import {
     Body,
     Controller,
+    HttpCode,
+    HttpStatus,
     Param,
     Post,
     Req,
@@ -44,6 +46,7 @@ export class OrdersController {
     }
 
     @Post(':orderId/price-response')
+    @HttpCode(HttpStatus.OK)
     @UseGuards(CustomerIdentityGuard, RolesGuard)
     @Roles('CUSTOMER')
     async priceResponse(
@@ -59,6 +62,7 @@ export class OrdersController {
     }
 
     @Post(':orderId/review')
+    @HttpCode(HttpStatus.OK)
     @UseGuards(InternalIdentityGuard, RolesGuard)
     @Roles('OWNER', 'PHARMACIST')
     async startReview(
@@ -72,6 +76,7 @@ export class OrdersController {
     }
 
     @Post(':orderId/quote')
+    @HttpCode(HttpStatus.OK)
     @UseGuards(InternalIdentityGuard, RolesGuard)
     @Roles('OWNER', 'PHARMACIST')
     async quoteOrder(
