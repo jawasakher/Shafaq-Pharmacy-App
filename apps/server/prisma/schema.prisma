@@ -111,6 +111,7 @@ model User {
   addresses Address[]
   sessions AuthSession[]
   orders Order[]
+  orderStateHistoryActors OrderStateHistory[] @relation("OrderStateHistoryActor")
 
   prescriptionVersionsUploaded PrescriptionVersion[] @relation("PrescriptionVersionUploader")
   prescriptionVersionsReviewed PrescriptionVersion[] @relation("PrescriptionVersionReviewer")
@@ -248,6 +249,7 @@ model Order {
 
   items        OrderItem[]
   assignments  PharmacyAssignment[]
+  stateHistory  OrderStateHistory[]
   prescription Prescription?
 
   @@index([customerId, createdAt])
@@ -329,4 +331,22 @@ model PrescriptionVersion {
   @@index([prescriptionId])
   @@index([uploadedByUserId])
   @@index([reviewedByUserId])
+}
+
+model OrderStateHistory {
+  id           String      @id @default(uuid())
+  orderId      String
+  order        Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  previousState OrderStatus
+  newState      OrderStatus
+  actorUserId  String?
+  actorUser    User?       @relation("OrderStateHistoryActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  reason       String?
+  requestId    String?
+  metadata     Json?
+  createdAt    DateTime    @default(now())
+
+  @@index([orderId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([newState, createdAt])
 }
