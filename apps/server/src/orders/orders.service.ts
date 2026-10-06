@@ -279,7 +279,7 @@ export class OrdersService {
                 where: {
                     id: assignment.id,
                     status: 'OFFERED',
-                    expiredAt: { gt: now },
+                    OR: [{ expiredAt: null }, { expiredAt: { gt: now } }],
                 },
                 data: {
                     status: 'ACTIVE',
