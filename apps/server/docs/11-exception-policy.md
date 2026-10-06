@@ -142,8 +142,8 @@ If any requested medicine is unavailable:
 - a receiving pharmacy receives and reviews the complete original order;
 - the receiving pharmacy must explicitly accept before becoming `ACTIVE` and
 	responsible;
-- if no eligible pharmacy accepts, the order follows the existing
-	`PHARMACY_REVIEWING -> CLOSED` outcome;
+- if no eligible pharmacy remains, the order follows the explicit
+	`PHARMACY_REVIEWING -> NO_PHARMACY_AVAILABLE` outcome;
 - no `ALL_UNAVAILABLE` or other new `OrderStatus` may be invented;
 - `medicineSubtotal` is finalized only after complete-order fulfillment is
 	confirmed.
@@ -640,3 +640,8 @@ No undocumented ad-hoc state should be introduced in code.
 ## 33. Final Principle
 
 > Exceptions are part of the domain, not an afterthought: every failure or unknown outcome must remain explicit, auditable, recoverable where possible, and consistent with the authoritative state machines.
+
+
+## Transfer exhaustion
+
+Transfer candidate exhaustion is an explicit order outcome. Candidates must be approved, open, geographically within **10 km**, and not previously excluded by transfer history. Offers expire after **15 minutes**. Rejection or expiration advances to the next candidate. When none remain, `OrderStateService` performs `PHARMACY_REVIEWING -> NO_PHARMACY_AVAILABLE` transactionally and records `OrderStateHistory`. This scenario must not use `CLOSED`.
