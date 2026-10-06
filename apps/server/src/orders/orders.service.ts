@@ -24,7 +24,7 @@ export class OrdersService {
         private readonly orderState: OrderStateService,
     ) {}
 
-    async createOrder(customerId: string, dto: CreateOrderDto, requestId?: string) {
+    async createOrder(customerId: string, dto: CreateOrderDto) {
         const customer = await this.prisma.user.findUnique({
             where: { id: customerId },
             select: {
@@ -299,7 +299,6 @@ export class OrdersService {
                     from: 'PENDING',
                     to: 'PHARMACY_REVIEWING',
                     actorUserId,
-                    requestId,
                     requestId,
                     reason: 'Pharmacy assignment accepted',
                 });
