@@ -69,7 +69,6 @@ export class OrdersController {
         @Req() request: AuthenticatedRequest,
         @Param('orderId') orderId: string,
         @Body() _dto: TransferOrderDto,
-        @Req() request: AuthenticatedRequest,
     ) {
         return this.ordersService.requestOrderTransfer(
             orderId,
