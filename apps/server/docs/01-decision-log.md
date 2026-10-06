@@ -455,3 +455,15 @@ If a business rule changes:
 - Update affected tests.
 
 No silent business-rule changes are allowed.
+
+
+## D-028 — Pharmacy transfer configuration
+
+Shafaq v1.2 transfer configuration is authoritative:
+
+- Candidate radius: `10 km` from the order delivery coordinates
+- Offer expiration: `15 minutes` after `offeredAt`
+- Candidates are ordered by distance ascending, then pharmacy ID ascending as a deterministic tie-breaker
+- Previously participating pharmacies are excluded from future transfer offers, including rejected and expired offers
+- If no eligible candidate remains, `PHARMACY_REVIEWING -> NO_PHARMACY_AVAILABLE`
+- Transfer authorization requires authenticated user, active pharmacy membership, matching membership/user role, and current active order responsibility
