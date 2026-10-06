@@ -941,6 +941,7 @@ describe('Orders API (e2e)', () => {
         const response = await request(app.getHttpServer())
             .post(`/api/v1/orders/${orderId}/transfer`)
             .set('Authorization', `Bearer ${token}`)
+            .set('x-request-id', 'transfer-no-candidate-test')
             .send({})
             .expect(201);
 
@@ -949,7 +950,7 @@ describe('Orders API (e2e)', () => {
         const history = await prisma.orderStateHistory.findMany({
             where: { orderId },
             orderBy: { createdAt: 'asc' },
-            select: { previousState: true, newState: true, actorUserId: true },
+            select: { previousState: true, newState: true, actorUserId: true, requestId: true },
         });
 
         expect(history).toEqual(expect.arrayContaining([
