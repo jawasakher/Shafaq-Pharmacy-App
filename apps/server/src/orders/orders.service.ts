@@ -995,10 +995,8 @@ export class OrdersService {
 
         const candidate = candidates[0];
         if (!candidate) {
-            await this.orderState.transition(tx, {
+            await this.orderState.transitionToNoPharmacyAvailable(tx, {
                 orderId: order.id,
-                from: 'PHARMACY_REVIEWING',
-                to: 'NO_PHARMACY_AVAILABLE',
                 actorUserId,
                 requestId,
                 reason: 'No eligible pharmacy remains for transfer',
