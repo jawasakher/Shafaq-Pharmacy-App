@@ -346,7 +346,7 @@ paths:
         description: No target pharmacy is supplied. The backend selects the next eligible candidate.
       responses:
         '201':
-          description: Transfer offer created
+          description: Transfer offer created; when no eligible candidate remains, the response data is the order in NO_PHARMACY_AVAILABLE
           content:
             application/json:
               schema:
