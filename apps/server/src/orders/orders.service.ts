@@ -1006,7 +1006,10 @@ export class OrdersService {
                     transferRadiusKm: TRANSFER_RADIUS_KM,
                 },
             });
-            return null;
+            return tx.order.findUniqueOrThrow({
+                where: { id: order.id },
+                select: { id: true, status: true },
+            });
         }
 
         const offeredAt = new Date();
