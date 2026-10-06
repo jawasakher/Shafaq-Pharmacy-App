@@ -738,10 +738,7 @@ describe('Orders API (e2e)', () => {
                     'Authorization',
                     `Bearer ${currentOwnerToken}`,
                 )
-                .send({
-                    targetPharmacyId:
-                        receivingPharmacy.id,
-                })
+                .send({})
                 .expect(201);
 
         const offeredAssignmentId =
@@ -828,6 +825,303 @@ describe('Orders API (e2e)', () => {
         expect(order?.pharmacyId).toBe(
             currentPharmacy.id,
         );
+    });
+
+
+    it('selects the nearest eligible pharmacy within 10 km and sets a 15 minute offer expiry', async () => {
+        const customer = await authenticateCustomer();
+        const currentOwner = await createUser('OWNER');
+        const nearOwner = await createUser('OWNER');
+        const farOwner = await createUser('OWNER');
+        const currentPharmacy = await createPharmacy('APPROVED', 'OPEN');
+        const nearPharmacy = await createPharmacy('APPROVED', 'OPEN');
+        const farPharmacy = await createPharmacy('APPROVED', 'OPEN');
+
+        await prisma.pharmacy.update({
+            where: { id: nearPharmacy.id },
+            data: { latitude: 35.521, longitude: 35.781 },
+        });
+        await prisma.pharmacy.update({
+            where: { id: farPharmacy.id },
+            data: { latitude: 35.70, longitude: 35.90 },
+        });
+
+        await prisma.pharmacyMember.createMany({
+            data: [
+                { pharmacyId: currentPharmacy.id, userId: currentOwner.id, role: 'OWNER', status: 'ACTIVE' },
+                { pharmacyId: nearPharmacy.id, userId: nearOwner.id, role: 'OWNER', status: 'ACTIVE' },
+                { pharmacyId: farPharmacy.id, userId: farOwner.id, role: 'OWNER', status: 'ACTIVE' },
+            ],
+        });
+
+        const createResponse = await request(app.getHttpServer())
+            .post('/api/v1/orders')
+            .set('Authorization', `Bearer ${customer.token}`)
+            .send({
+                pharmacyId: currentPharmacy.id,
+                deliveryAddress: 'Transfer Radius Test',
+                deliveryLatitude: '35.5200000',
+                deliveryLongitude: '35.7800000',
+                items: [{ medicineName: 'Paracetamol', quantity: 1 }],
+            })
+            .expect(201);
+
+        const orderId = createResponse.body.id as string;
+        const initialAssignmentId = createResponse.body.assignments[0].id as string;
+        createdOrderIds.add(orderId);
+
+        const currentToken = await createInternalToken(currentOwner.id);
+        await request(app.getHttpServer())
+            .post(`/api/v1/pharmacy/assignments/${initialAssignmentId}/accept`)
+            .set('Authorization', `Bearer ${currentToken}`)
+            .expect(200);
+
+        const response = await request(app.getHttpServer())
+            .post(`/api/v1/orders/${orderId}/transfer`)
+            .set('Authorization', `Bearer ${currentToken}`)
+            .send({})
+            .expect(201);
+
+        expect(response.body.pharmacyId).toBe(nearPharmacy.id);
+        expect(response.body.status).toBe('OFFERED');
+
+        const offer = await prisma.pharmacyAssignment.findUnique({
+            where: { id: response.body.id as string },
+            select: { offeredAt: true, expiredAt: true, pharmacyId: true },
+        });
+
+        expect(offer?.pharmacyId).toBe(nearPharmacy.id);
+        expect(offer?.expiredAt).not.toBeNull();
+        expect(offer!.expiredAt!.getTime() - offer!.offeredAt.getTime())
+            .toBe(15 * 60 * 1000);
+    });
+
+    it('transitions to NO_PHARMACY_AVAILABLE when no eligible transfer candidate remains', async () => {
+        const customer = await authenticateCustomer();
+        const currentOwner = await createUser('OWNER');
+        const currentPharmacy = await createPharmacy('APPROVED', 'OPEN');
+        const distantPharmacy = await createPharmacy('APPROVED', 'OPEN');
+
+        await prisma.pharmacy.update({
+            where: { id: distantPharmacy.id },
+            data: { latitude: 36.5, longitude: 37.5 },
+        });
+
+        await prisma.pharmacyMember.create({
+            data: {
+                pharmacyId: currentPharmacy.id,
+                userId: currentOwner.id,
+                role: 'OWNER',
+                status: 'ACTIVE',
+            },
+        });
+
+        const createResponse = await request(app.getHttpServer())
+            .post('/api/v1/orders')
+            .set('Authorization', `Bearer ${customer.token}`)
+            .send({
+                pharmacyId: currentPharmacy.id,
+                deliveryAddress: 'No Candidate Test',
+                deliveryLatitude: '35.5200000',
+                deliveryLongitude: '35.7800000',
+                items: [{ medicineName: 'Paracetamol', quantity: 1 }],
+            })
+            .expect(201);
+
+        const orderId = createResponse.body.id as string;
+        const assignmentId = createResponse.body.assignments[0].id as string;
+        createdOrderIds.add(orderId);
+
+        const token = await createInternalToken(currentOwner.id);
+        await request(app.getHttpServer())
+            .post(`/api/v1/pharmacy/assignments/${assignmentId}/accept`)
+            .set('Authorization', `Bearer ${token}`)
+            .expect(200);
+
+        const response = await request(app.getHttpServer())
+            .post(`/api/v1/orders/${orderId}/transfer`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({})
+            .expect(201);
+
+        expect(response.body.status).toBe('NO_PHARMACY_AVAILABLE');
+
+        const history = await prisma.orderStateHistory.findMany({
+            where: { orderId },
+            orderBy: { createdAt: 'asc' },
+            select: { previousState: true, newState: true, actorUserId: true },
+        });
+
+        expect(history).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                previousState: 'PHARMACY_REVIEWING',
+                newState: 'NO_PHARMACY_AVAILABLE',
+                actorUserId: currentOwner.id,
+            }),
+        ]));
+    });
+
+    it('advances to the next candidate after a transfer offer expires', async () => {
+        const customer = await authenticateCustomer();
+        const currentOwner = await createUser('OWNER');
+        const firstOwner = await createUser('OWNER');
+        const secondOwner = await createUser('OWNER');
+        const currentPharmacy = await createPharmacy('APPROVED', 'OPEN');
+        const firstPharmacy = await createPharmacy('APPROVED', 'OPEN');
+        const secondPharmacy = await createPharmacy('APPROVED', 'OPEN');
+
+        await prisma.pharmacy.update({
+            where: { id: firstPharmacy.id },
+            data: { latitude: 35.521, longitude: 35.781 },
+        });
+        await prisma.pharmacy.update({
+            where: { id: secondPharmacy.id },
+            data: { latitude: 35.522, longitude: 35.782 },
+        });
+
+        await prisma.pharmacyMember.createMany({
+            data: [
+                { pharmacyId: currentPharmacy.id, userId: currentOwner.id, role: 'OWNER', status: 'ACTIVE' },
+                { pharmacyId: firstPharmacy.id, userId: firstOwner.id, role: 'OWNER', status: 'ACTIVE' },
+                { pharmacyId: secondPharmacy.id, userId: secondOwner.id, role: 'OWNER', status: 'ACTIVE' },
+            ],
+        });
+
+        const createResponse = await request(app.getHttpServer())
+            .post('/api/v1/orders')
+            .set('Authorization', `Bearer ${customer.token}`)
+            .send({
+                pharmacyId: currentPharmacy.id,
+                deliveryAddress: 'Expiration Test',
+                deliveryLatitude: '35.5200000',
+                deliveryLongitude: '35.7800000',
+                items: [{ medicineName: 'Paracetamol', quantity: 1 }],
+            })
+            .expect(201);
+
+        const orderId = createResponse.body.id as string;
+        const initialAssignmentId = createResponse.body.assignments[0].id as string;
+        createdOrderIds.add(orderId);
+
+        const currentToken = await createInternalToken(currentOwner.id);
+        await request(app.getHttpServer())
+            .post(`/api/v1/pharmacy/assignments/${initialAssignmentId}/accept`)
+            .set('Authorization', `Bearer ${currentToken}`)
+            .expect(200);
+
+        const firstOffer = await request(app.getHttpServer())
+            .post(`/api/v1/orders/${orderId}/transfer`)
+            .set('Authorization', `Bearer ${currentToken}`)
+            .send({})
+            .expect(201);
+
+        await prisma.pharmacyAssignment.update({
+            where: { id: firstOffer.body.id as string },
+            data: { expiredAt: new Date(Date.now() - 1000) },
+        });
+
+        await request(app.getHttpServer())
+            .post(`/api/v1/pharmacy/assignments/${firstOffer.body.id}/accept`)
+            .set('Authorization', `Bearer ${await createInternalToken(firstOwner.id)}`)
+            .expect(409);
+
+        const nextOffer = await prisma.pharmacyAssignment.findFirst({
+            where: { orderId, status: 'OFFERED' },
+            select: { pharmacyId: true, status: true, expiredAt: true },
+        });
+
+        expect(nextOffer).toMatchObject({
+            pharmacyId: secondPharmacy.id,
+            status: 'OFFERED',
+        });
+        expect(nextOffer?.expiredAt).not.toBeNull();
+    });
+
+    it('allows only one pharmacy to win concurrent transfer acceptance', async () => {
+        const customer = await authenticateCustomer();
+        const currentOwner = await createUser('OWNER');
+        const ownerB = await createUser('OWNER');
+        const ownerC = await createUser('OWNER');
+        const currentPharmacy = await createPharmacy('APPROVED', 'OPEN');
+        const pharmacyB = await createPharmacy('APPROVED', 'OPEN');
+        const pharmacyC = await createPharmacy('APPROVED', 'OPEN');
+
+        await prisma.pharmacyMember.createMany({
+            data: [
+                { pharmacyId: currentPharmacy.id, userId: currentOwner.id, role: 'OWNER', status: 'ACTIVE' },
+                { pharmacyId: pharmacyB.id, userId: ownerB.id, role: 'OWNER', status: 'ACTIVE' },
+                { pharmacyId: pharmacyC.id, userId: ownerC.id, role: 'OWNER', status: 'ACTIVE' },
+            ],
+        });
+
+        const createResponse = await request(app.getHttpServer())
+            .post('/api/v1/orders')
+            .set('Authorization', `Bearer ${customer.token}`)
+            .send({
+                pharmacyId: currentPharmacy.id,
+                deliveryAddress: 'Concurrency Test',
+                deliveryLatitude: '35.5200000',
+                deliveryLongitude: '35.7800000',
+                items: [{ medicineName: 'Paracetamol', quantity: 1 }],
+            })
+            .expect(201);
+
+        const orderId = createResponse.body.id as string;
+        const initialAssignmentId = createResponse.body.assignments[0].id as string;
+        createdOrderIds.add(orderId);
+
+        const currentToken = await createInternalToken(currentOwner.id);
+        await request(app.getHttpServer())
+            .post(`/api/v1/pharmacy/assignments/${initialAssignmentId}/accept`)
+            .set('Authorization', `Bearer ${currentToken}`)
+            .expect(200);
+
+        const offerB = await prisma.pharmacyAssignment.create({
+            data: {
+                orderId,
+                pharmacyId: pharmacyB.id,
+                status: 'OFFERED',
+                expiredAt: new Date(Date.now() + 15 * 60 * 1000),
+            },
+        });
+        const offerC = await prisma.pharmacyAssignment.create({
+            data: {
+                orderId: orderId,
+                pharmacyId: pharmacyC.id,
+                status: 'OFFERED',
+                expiredAt: new Date(Date.now() + 15 * 60 * 1000),
+            },
+        }).catch(async () => {
+            const created = await prisma.pharmacyAssignment.create({
+                data: {
+                    orderId,
+                    pharmacyId: pharmacyC.id,
+                    status: 'OFFERED',
+                    expiredAt: new Date(Date.now() + 15 * 60 * 1000),
+                },
+            });
+            return created;
+        });
+
+        const [acceptB, acceptC] = await Promise.allSettled([
+            request(app.getHttpServer())
+                .post(`/api/v1/pharmacy/assignments/${offerB.id}/accept`)
+                .set('Authorization', `Bearer ${await createInternalToken(ownerB.id)}`),
+            request(app.getHttpServer())
+                .post(`/api/v1/pharmacy/assignments/${offerC.id}/accept`)
+                .set('Authorization', `Bearer ${await createInternalToken(ownerC.id)}`),
+        ]);
+
+        const successes = [acceptB, acceptC].filter(
+            (result) => result.status === 'fulfilled' && result.value.status === 200,
+        );
+        expect(successes).toHaveLength(1);
+
+        const active = await prisma.pharmacyAssignment.findMany({
+            where: { orderId, status: 'ACTIVE' },
+            select: { pharmacyId: true },
+        });
+        expect(active).toHaveLength(1);
     });
 
     it('rejects assignment acceptance from an inactive pharmacy owner membership', async () => {
