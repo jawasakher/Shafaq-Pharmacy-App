@@ -123,6 +123,7 @@ A driver with an unresolved active delivery or cash exception must not become `O
 
 * `PENDING`
 * `PHARMACY_REVIEWING`
+* `NO_PHARMACY_AVAILABLE`
 * `PHARMACY_CONFIRMED`
 * `CUSTOMER_CONFIRMATION_PENDING`
 * `PAYMENT_PENDING`
@@ -156,7 +157,7 @@ PENDING
 | ----------------------------- | ----------------------------- | ----------------- | ----------------------------------------------------------- |
 | PENDING                       | PHARMACY_REVIEWING            | SYSTEM / PHARMACY | Valid order exists and responsible pharmacy can review      |
 | PHARMACY_REVIEWING            | PHARMACY_CONFIRMED            | PHARMACY          | Pharmacy can fulfill the complete order                     |
-| PHARMACY_REVIEWING            | CLOSED                        | PHARMACY / SYSTEM | Order cannot continue and no transfer is accepted           |
+| PHARMACY_REVIEWING            | NO_PHARMACY_AVAILABLE          | PHARMACY / SYSTEM | No eligible transfer pharmacy remains                       |
 | PHARMACY_CONFIRMED            | CUSTOMER_CONFIRMATION_PENDING | SYSTEM            | Final medicine price is available                           |
 | CUSTOMER_CONFIRMATION_PENDING | PAYMENT_PENDING               | CUSTOMER          | Customer accepts the final price                            |
 | CUSTOMER_CONFIRMATION_PENDING | CLOSED                        | CUSTOMER          | Customer rejects the final price                            |
@@ -531,3 +532,16 @@ Each history record stores:
 A transition is not considered committed unless both the order state mutation and its history record commit successfully.
 
 Direct order status mutations outside the state-transition mechanism are prohibited.
+
+
+## Transfer rules
+
+- Candidate radius is **10 km** using kilometers as the unit
+- Candidate distance is calculated from the order delivery coordinates using Haversine distance
+- Candidates are ordered by distance ascending, then pharmacy ID ascending
+- A transfer offer expires **15 minutes** after `offeredAt`
+- Acceptance must reject offers past `expiredAt` even if persisted status is still `OFFERED`
+- Rejected and expired pharmacies, and pharmacies that already participated in the order transfer history, are excluded from later candidates
+- Only one pending transfer offer is created at a time
+- Rejection or expiration advances to the next eligible candidate
+- When no candidate remains, `PHARMACY_REVIEWING -> NO_PHARMACY_AVAILABLE` is performed transactionally through `OrderStateService`
