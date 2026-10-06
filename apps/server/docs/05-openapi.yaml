@@ -1568,6 +1568,17 @@ components:
           format: uuid
         status:
           $ref: '#/components/schemas/AssignmentStatus'
+        offeredAt:
+          type: string
+          format: date-time
+        expiredAt:
+          type: string
+          format: date-time
+          nullable: true
+        activatedAt:
+          type: string
+          format: date-time
+          nullable: true
         createdAt:
           type: string
           format: date-time
