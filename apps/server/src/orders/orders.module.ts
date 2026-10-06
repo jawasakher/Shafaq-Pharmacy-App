@@ -6,6 +6,7 @@ import { PharmacyAssignmentsController } from './pharmacy-assignments.controller
 import { DeliveryPricingService } from './delivery-pricing.service.js';
 import { OrdersController } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
+import { OrderStateService } from './order-state.service.js';
 
 @Module({
     imports: [PrismaModule, IdentityModule],
@@ -15,6 +16,7 @@ import { OrdersService } from './orders.service.js';
     ],
     providers: [
         OrdersService,
+        OrderStateService,
         DeliveryPricingService,
     ],
 })
