@@ -968,6 +968,12 @@ export class OrdersService {
                 approvalStatus: 'APPROVED',
                 operationalStatus: 'OPEN',
                 id: { notIn: [...excluded] },
+                members: {
+                    some: {
+                        status: 'ACTIVE',
+                        role: { in: ['OWNER', 'PHARMACIST'] },
+                    },
+                },
             },
             select: {
                 id: true,
