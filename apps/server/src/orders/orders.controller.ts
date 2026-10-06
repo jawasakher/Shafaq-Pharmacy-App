@@ -68,12 +68,13 @@ export class OrdersController {
     async transferOrder(
         @Req() request: AuthenticatedRequest,
         @Param('orderId') orderId: string,
-        @Body() dto: TransferOrderDto,
+        @Body() _dto: TransferOrderDto,
+        @Req() request: AuthenticatedRequest,
     ) {
         return this.ordersService.requestOrderTransfer(
             orderId,
             request.user.id,
-            dto.targetPharmacyId,
+            this.requestId(request),
         );
     }
 
@@ -105,5 +106,10 @@ export class OrdersController {
             request.user.id,
             dto,
         );
+    }
+
+    private requestId(request: AuthenticatedRequest) {
+        const value = request.headers['x-request-id'];
+        return Array.isArray(value) ? value[0] : value;
     }
 }
