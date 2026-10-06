@@ -331,23 +331,19 @@ paths:
       tags: [Pharmacy Assignments]
       summary: Transfer an order to another pharmacy
       description: |
-        The current responsible pharmacy may request a transfer according
-        to business rules. The new pharmacy must explicitly accept the offer.
-        The original Order, including `Order.pharmacyId`, remains unchanged.
-        The receiving pharmacy is represented by a new PharmacyAssignment and
-        becomes responsible only when that assignment becomes ACTIVE.
-        There must be no simultaneous ACTIVE assignments.
+        The current responsible pharmacy may request a transfer. The backend
+        calculates the next eligible pharmacy from approved/open pharmacies
+        within 10 km of the order delivery coordinates. Candidates are ordered
+        by distance ascending with pharmacy ID ascending as a deterministic
+        tie-breaker. A new offer expires 15 minutes after `offeredAt` and the
+        receiving pharmacy must explicitly accept it. Rejected and expired
+        pharmacies are excluded from later candidates. If no eligible pharmacy
+        remains, the order transitions to `NO_PHARMACY_AVAILABLE`. The original
+        Order, including `Order.pharmacyId`, remains unchanged. There must be
+        no simultaneous ACTIVE assignments.
       requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [targetPharmacyId]
-              properties:
-                targetPharmacyId:
-                  type: string
-                  format: uuid
+        required: false
+        description: No target pharmacy is supplied. The backend selects the next eligible candidate.
       responses:
         '201':
           description: Transfer offer created
@@ -1962,6 +1958,7 @@ components:
       enum:
         - PENDING
         - PHARMACY_REVIEWING
+        - NO_PHARMACY_AVAILABLE
         - PHARMACY_CONFIRMED
         - CUSTOMER_CONFIRMATION_PENDING
         - PAYMENT_PENDING
