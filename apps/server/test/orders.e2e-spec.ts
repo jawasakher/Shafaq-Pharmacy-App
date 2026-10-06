@@ -957,6 +957,7 @@ describe('Orders API (e2e)', () => {
                 previousState: 'PHARMACY_REVIEWING',
                 newState: 'NO_PHARMACY_AVAILABLE',
                 actorUserId: currentOwner.id,
+                requestId: 'transfer-no-candidate-test',
             }),
         ]));
     });
