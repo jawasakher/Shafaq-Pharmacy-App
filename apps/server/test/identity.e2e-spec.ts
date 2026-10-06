@@ -164,7 +164,9 @@ describe('Identity authentication (e2e)', () => {
       ),
     );
 
-    const statuses = results.map((result) => result.status).sort();
+    const statuses = results
+      .map((result) => result.status)
+      .sort((a, b) => a - b);
     expect(statuses).toEqual([201, 409]);
   });
 
