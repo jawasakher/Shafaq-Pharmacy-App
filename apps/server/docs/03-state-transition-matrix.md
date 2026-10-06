@@ -540,6 +540,7 @@ Direct order status mutations outside the state-transition mechanism are prohibi
 - Candidate distance is calculated from the order delivery coordinates using Haversine distance
 - Candidates are ordered by distance ascending, then pharmacy ID ascending
 - A transfer offer expires **15 minutes** after `offeredAt`
+- Expiration is enforced server-side and is idempotent; persisted `OFFERED` status does not make an expired offer acceptable
 - Acceptance must reject offers past `expiredAt` even if persisted status is still `OFFERED`
 - Rejected and expired pharmacies, and pharmacies that already participated in the order transfer history, are excluded from later candidates
 - Only one pending transfer offer is created at a time
