@@ -1116,6 +1116,43 @@ describe('Orders API (e2e)', () => {
         expect(active).toHaveLength(1);
     });
 
+    it('rejects transfer operations when the active membership role does not match the authenticated user role', async () => {
+        const customer = await authenticateCustomer();
+        const owner = await createUser('OWNER');
+        const pharmacy = await createPharmacy('APPROVED', 'OPEN');
+
+        await prisma.pharmacyMember.create({
+            data: {
+                pharmacyId: pharmacy.id,
+                userId: owner.id,
+                role: 'PHARMACIST',
+                status: 'ACTIVE',
+            },
+        });
+
+        const createResponse = await request(app.getHttpServer())
+            .post('/api/v1/orders')
+            .set('Authorization', `Bearer ${customer.token}`)
+            .send({
+                pharmacyId: pharmacy.id,
+                deliveryAddress: 'Membership Role Test',
+                deliveryLatitude: '35.5200000',
+                deliveryLongitude: '35.7800000',
+                items: [{ medicineName: 'Paracetamol', quantity: 1 }],
+            })
+            .expect(201);
+
+        const orderId = createResponse.body.id as string;
+        const assignmentId = createResponse.body.assignments[0].id as string;
+        createdOrderIds.add(orderId);
+
+        const ownerToken = await createInternalToken(owner.id);
+        await request(app.getHttpServer())
+            .post(`/api/v1/pharmacy/assignments/${assignmentId}/accept`)
+            .set('Authorization', `Bearer ${ownerToken}`)
+            .expect(400);
+    });
+
     it('rejects assignment acceptance from an inactive pharmacy owner membership', async () => {
         const customer = await authenticateCustomer();
         const owner = await createUser('OWNER');
