@@ -11,6 +11,10 @@ import { CreateOrderDto } from './dto/create-order.dto.js';
 import { DeliveryPricingService } from './delivery-pricing.service.js';
 import { PharmacyQuoteDto } from './dto/pharmacy-quote.dto.js';
 import { OrderStateService } from './order-state.service.js';
+import {
+    TRANSFER_OFFER_EXPIRATION_MINUTES,
+    TRANSFER_RADIUS_KM,
+} from './transfer.config.js';
 
 @Injectable()
 export class OrdersService {
@@ -122,42 +126,70 @@ export class OrdersService {
     async acceptPharmacyAssignment(
         assignmentId: string,
         actorUserId: string,
+        requestId?: string,
     ) {
         return this.prisma.$transaction(async (tx) => {
-            const assignment =
-                await tx.pharmacyAssignment.findUnique({
-                    where: { id: assignmentId },
-                    select: {
-                        id: true,
-                        orderId: true,
-                        pharmacyId: true,
-                    },
-                });
+            const assignment = await tx.pharmacyAssignment.findUnique({
+                where: { id: assignmentId },
+                select: {
+                    id: true,
+                    orderId: true,
+                    pharmacyId: true,
+                    status: true,
+                    expiredAt: true,
+                },
+            });
 
             if (!assignment) {
-                throw new NotFoundException(
-                    'Pharmacy assignment not found',
-                );
+                throw new NotFoundException('Pharmacy assignment not found');
             }
 
-            await this.requireActivePharmacyMembership(
+            const membership = await this.requireTransferMembership(
                 tx,
                 assignment.pharmacyId,
                 actorUserId,
             );
 
-            const order =
-                await tx.order.findUnique({
-                    where: { id: assignment.orderId },
-                    select: {
-                        id: true,
-                        status: true,
-                    },
-                });
+            const order = await tx.order.findUnique({
+                where: { id: assignment.orderId },
+                select: {
+                    id: true,
+                    status: true,
+                    deliveryLatitude: true,
+                    deliveryLongitude: true,
+                },
+            });
 
             if (!order) {
-                throw new NotFoundException(
-                    'Order not found',
+                throw new NotFoundException('Order not found');
+            }
+
+            const now = new Date();
+            if (
+                assignment.status === 'OFFERED' &&
+                assignment.expiredAt &&
+                assignment.expiredAt <= now
+            ) {
+                const expired = await tx.pharmacyAssignment.updateMany({
+                    where: { id: assignment.id, status: 'OFFERED' },
+                    data: { status: 'EXPIRED' },
+                });
+
+                if (expired.count === 1) {
+                    await this.advanceTransferAfterOfferEnd(
+                        tx,
+                        order.id,
+                        actorUserId,
+                        requestId,
+                    );
+                }
+
+                throw new ConflictException('Pharmacy assignment offer has expired');
+            }
+
+            if (assignment.status !== 'OFFERED') {
+                throw new ConflictException(
+                    'Pharmacy assignment is not available for acceptance',
                 );
             }
 
@@ -170,24 +202,34 @@ export class OrdersService {
                 );
             }
 
+            const targetPharmacy = await tx.pharmacy.findUnique({
+                where: { id: assignment.pharmacyId },
+                select: {
+                    id: true,
+                    approvalStatus: true,
+                    operationalStatus: true,
+                },
+            });
+
             if (
-                order.status ===
-                'PHARMACY_REVIEWING'
+                !targetPharmacy ||
+                targetPharmacy.approvalStatus !== 'APPROVED' ||
+                targetPharmacy.operationalStatus !== 'OPEN'
             ) {
-                const previousAssignment =
-                    await tx.pharmacyAssignment.findFirst({
-                        where: {
-                            orderId: order.id,
-                            id: {
-                                not: assignment.id,
-                            },
-                            status: 'ACTIVE',
-                        },
-                        select: {
-                            id: true,
-                            pharmacyId: true,
-                        },
-                    });
+                throw new ConflictException(
+                    'Pharmacy is no longer eligible to receive this order',
+                );
+            }
+
+            if (order.status === 'PHARMACY_REVIEWING') {
+                const previousAssignment = await tx.pharmacyAssignment.findFirst({
+                    where: {
+                        orderId: order.id,
+                        status: 'ACTIVE',
+                        id: { not: assignment.id },
+                    },
+                    select: { id: true, pharmacyId: true },
+                });
 
                 if (!previousAssignment) {
                     throw new ConflictException(
@@ -195,18 +237,16 @@ export class OrdersService {
                     );
                 }
 
-                const transferred =
-                    await tx.pharmacyAssignment.updateMany({
-                        where: {
-                            id: previousAssignment.id,
-                            status: 'ACTIVE',
-                        },
-                        data: {
-                            status: 'TRANSFERRED',
-                            transferredAt:
-                                new Date(),
-                        },
-                    });
+                const transferred = await tx.pharmacyAssignment.updateMany({
+                    where: {
+                        id: previousAssignment.id,
+                        status: 'ACTIVE',
+                    },
+                    data: {
+                        status: 'TRANSFERRED',
+                        transferredAt: now,
+                    },
+                });
 
                 if (transferred.count !== 1) {
                     throw new ConflictException(
@@ -220,38 +260,32 @@ export class OrdersService {
                         medicineSubtotal: null,
                         deliveryFee: null,
                         totalAmount: null,
-                        pricingOriginPharmacyId:
-                            null,
-                        pricingOriginLatitude:
-                            null,
-                        pricingOriginLongitude:
-                            null,
+                        pricingOriginPharmacyId: null,
+                        pricingOriginLatitude: null,
+                        pricingOriginLongitude: null,
                         pricingDistance: null,
                         pricingDistanceUnit: null,
-                        pricingCalculatedAt:
-                            null,
+                        pricingCalculatedAt: null,
                         pricingQuoteAt: null,
                         pricingSupported: null,
-                        pricingConfigurationVersion:
-                            null,
+                        pricingConfigurationVersion: null,
                         pricingStrategy: null,
-                        pricingConfigurationRef:
-                            null,
+                        pricingConfigurationRef: null,
                     },
                 });
             }
 
-            const activated =
-                await tx.pharmacyAssignment.updateMany({
-                    where: {
-                        id: assignment.id,
-                        status: 'OFFERED',
-                    },
-                    data: {
-                        status: 'ACTIVE',
-                        activatedAt: new Date(),
-                    },
-                });
+            const activated = await tx.pharmacyAssignment.updateMany({
+                where: {
+                    id: assignment.id,
+                    status: 'OFFERED',
+                    expiredAt: { gt: now },
+                },
+                data: {
+                    status: 'ACTIVE',
+                    activatedAt: now,
+                },
+            });
 
             if (activated.count !== 1) {
                 throw new ConflictException(
@@ -265,20 +299,16 @@ export class OrdersService {
                     from: 'PENDING',
                     to: 'PHARMACY_REVIEWING',
                     actorUserId,
+                    requestId,
                     reason: 'Pharmacy assignment accepted',
                 });
             }
 
             return tx.pharmacyAssignment.findUniqueOrThrow({
-                where: {
-                    id: assignment.id,
-                },
+                where: { id: assignment.id },
                 include: {
                     order: {
-                        select: {
-                            id: true,
-                            status: true,
-                        },
+                        select: { id: true, status: true },
                     },
                 },
             });
@@ -288,159 +318,107 @@ export class OrdersService {
     async requestOrderTransfer(
         orderId: string,
         actorUserId: string,
-        targetPharmacyId: string,
+        requestId?: string,
     ) {
         return this.prisma.$transaction(async (tx) => {
-            const order =
-                await tx.order.findUnique({
-                    where: { id: orderId },
-                    select: {
-                        id: true,
-                        status: true,
-                    },
-                });
+            const order = await tx.order.findUnique({
+                where: { id: orderId },
+                select: {
+                    id: true,
+                    status: true,
+                    deliveryLatitude: true,
+                    deliveryLongitude: true,
+                },
+            });
 
             if (!order) {
-                throw new NotFoundException(
-                    'Order not found',
-                );
+                throw new NotFoundException('Order not found');
             }
 
-            if (
-                order.status !==
-                'PHARMACY_REVIEWING'
-            ) {
+            if (order.status !== 'PHARMACY_REVIEWING') {
                 throw new ConflictException(
                     'Order is not available for pharmacy transfer',
                 );
             }
 
-            const currentAssignment =
-                await this.getActiveAssignment(
-                    tx,
-                    order.id,
-                );
-
-            await this.requireActivePharmacyMembership(
+            const currentAssignment = await this.getActiveAssignment(tx, order.id);
+            await this.requireTransferMembership(
                 tx,
                 currentAssignment.pharmacyId,
                 actorUserId,
             );
 
-            if (
-                currentAssignment.pharmacyId ===
-                targetPharmacyId
-            ) {
-                throw new BadRequestException(
-                    'Target pharmacy must be different from the current pharmacy',
-                );
-            }
+            await this.expireTransferOffers(tx, order.id);
 
-            const targetPharmacy =
-                await tx.pharmacy.findUnique({
-                    where: {
-                        id: targetPharmacyId,
-                    },
-                    select: {
-                        id: true,
-                        approvalStatus: true,
-                        operationalStatus: true,
-                    },
-                });
-
-            if (!targetPharmacy) {
-                throw new NotFoundException(
-                    'Target pharmacy not found',
-                );
-            }
-
-            if (
-                targetPharmacy.approvalStatus !==
-                'APPROVED' ||
-                targetPharmacy.operationalStatus !==
-                    'OPEN'
-            ) {
-                throw new BadRequestException(
-                    'Target pharmacy is not eligible to receive orders',
-                );
-            }
-
-            const existingOffer =
-                await tx.pharmacyAssignment.findFirst({
-                    where: {
-                        orderId: order.id,
-                        pharmacyId:
-                            targetPharmacyId,
-                        status: 'OFFERED',
-                    },
-                    select: {
-                        id: true,
-                    },
-                });
+            const existingOffer = await tx.pharmacyAssignment.findFirst({
+                where: { orderId: order.id, status: 'OFFERED' },
+                select: { id: true },
+            });
 
             if (existingOffer) {
                 throw new ConflictException(
-                    'A transfer offer already exists for the target pharmacy',
+                    'A transfer offer is already pending for this order',
                 );
             }
 
-            const assignment =
-                await tx.pharmacyAssignment.create({
-                    data: {
-                        orderId: order.id,
-                        pharmacyId:
-                            targetPharmacyId,
-                        status: 'OFFERED',
-                    },
-                });
-
-            return assignment;
+            return this.offerNextEligiblePharmacy(
+                tx,
+                order,
+                actorUserId,
+                requestId,
+            );
         });
     }
 
-    async listPharmacyAssignmentOffers(
-        actorUserId: string,
-    ) {
-        const memberships =
-            await this.prisma.pharmacyMember.findMany({
-                where: {
-                    userId: actorUserId,
-                    status: 'ACTIVE',
-                },
-                select: {
-                    pharmacyId: true,
-                },
-            });
+    async listPharmacyAssignmentOffers(actorUserId: string) {
+        const memberships = await this.prisma.pharmacyMember.findMany({
+            where: {
+                userId: actorUserId,
+                status: 'ACTIVE',
+                role: { in: ['OWNER', 'PHARMACIST'] },
+            },
+            select: { pharmacyId: true },
+        });
 
-        const pharmacyIds =
-            memberships.map(
-                (membership) =>
-                    membership.pharmacyId,
-            );
+        const pharmacyIds = memberships.map((membership) => membership.pharmacyId);
+        if (pharmacyIds.length === 0) return [];
 
-        if (pharmacyIds.length === 0) {
-            return [];
+        const offers = await this.prisma.pharmacyAssignment.findMany({
+            where: {
+                pharmacyId: { in: pharmacyIds },
+                status: 'OFFERED',
+                order: { status: 'PHARMACY_REVIEWING' },
+            },
+            select: { id: true, orderId: true, expiredAt: true },
+        });
+
+        for (const offer of offers) {
+            if (offer.expiredAt && offer.expiredAt <= new Date()) {
+                await this.prisma.$transaction(async (tx) => {
+                    const expired = await tx.pharmacyAssignment.updateMany({
+                        where: { id: offer.id, status: 'OFFERED' },
+                        data: { status: 'EXPIRED' },
+                    });
+                    if (expired.count === 1) {
+                        await this.advanceTransferAfterOfferEnd(
+                            tx,
+                            offer.orderId,
+                            actorUserId,
+                        );
+                    }
+                });
+            }
         }
 
         return this.prisma.pharmacyAssignment.findMany({
             where: {
-                pharmacyId: {
-                    in: pharmacyIds,
-                },
+                pharmacyId: { in: pharmacyIds },
                 status: 'OFFERED',
-                order: {
-                    status: 'PHARMACY_REVIEWING',
-                },
+                order: { status: 'PHARMACY_REVIEWING' },
             },
-            orderBy: {
-                offeredAt: 'asc',
-            },
+            orderBy: [{ offeredAt: 'asc' }, { id: 'asc' }],
             include: {
-                order: {
-                    include: {
-                        items: true,
-                    },
-                },
+                order: { include: { items: true } },
             },
         });
     }
@@ -448,26 +426,25 @@ export class OrdersService {
     async rejectPharmacyAssignment(
         assignmentId: string,
         actorUserId: string,
+        requestId?: string,
     ) {
         return this.prisma.$transaction(async (tx) => {
-            const assignment =
-                await tx.pharmacyAssignment.findUnique({
-                    where: { id: assignmentId },
-                    select: {
-                        id: true,
-                        orderId: true,
-                        pharmacyId: true,
-                        status: true,
-                    },
-                });
+            const assignment = await tx.pharmacyAssignment.findUnique({
+                where: { id: assignmentId },
+                select: {
+                    id: true,
+                    orderId: true,
+                    pharmacyId: true,
+                    status: true,
+                    expiredAt: true,
+                },
+            });
 
             if (!assignment) {
-                throw new NotFoundException(
-                    'Pharmacy assignment not found',
-                );
+                throw new NotFoundException('Pharmacy assignment not found');
             }
 
-            await this.requireActivePharmacyMembership(
+            await this.requireTransferMembership(
                 tx,
                 assignment.pharmacyId,
                 actorUserId,
@@ -479,52 +456,36 @@ export class OrdersService {
                 );
             }
 
-            const order =
-                await tx.order.findUnique({
-                    where: { id: assignment.orderId },
-                    select: {
-                        id: true,
-                        status: true,
-                    },
-                });
+            const order = await tx.order.findUnique({
+                where: { id: assignment.orderId },
+                select: { id: true, status: true },
+            });
 
-            if (!order) {
-                throw new NotFoundException(
-                    'Order not found',
-                );
-            }
-
-            if (
-                order.status !==
-                'PHARMACY_REVIEWING'
-            ) {
+            if (!order) throw new NotFoundException('Order not found');
+            if (order.status !== 'PHARMACY_REVIEWING') {
                 throw new ConflictException(
                     'Only transfer offers can be rejected in the current order state',
                 );
             }
 
-            const rejected =
-                await tx.pharmacyAssignment.updateMany({
-                    where: {
-                        id: assignment.id,
-                        status: 'OFFERED',
-                    },
-                    data: {
-                        status: 'REJECTED',
-                        rejectedAt: new Date(),
-                    },
-                });
+            const rejected = await tx.pharmacyAssignment.updateMany({
+                where: { id: assignment.id, status: 'OFFERED' },
+                data: { status: 'REJECTED', rejectedAt: new Date() },
+            });
 
             if (rejected.count !== 1) {
-                throw new ConflictException(
-                    'Pharmacy assignment changed before rejection',
-                );
+                throw new ConflictException('Pharmacy assignment changed before rejection');
             }
 
+            await this.advanceTransferAfterOfferEnd(
+                tx,
+                order.id,
+                actorUserId,
+                requestId,
+            );
+
             return tx.pharmacyAssignment.findUniqueOrThrow({
-                where: {
-                    id: assignment.id,
-                },
+                where: { id: assignment.id },
             });
         });
     }
@@ -931,23 +892,187 @@ export class OrdersService {
         pharmacyId: string,
         userId: string,
     ) {
-        const membership =
-            await tx.pharmacyMember.findFirst({
-                where: {
-                    pharmacyId,
-                    userId,
-                    status: 'ACTIVE',
-                },
-                select: {
-                    id: true,
+        const membership = await tx.pharmacyMember.findFirst({
+            where: { pharmacyId, userId, status: 'ACTIVE' },
+            select: { id: true },
+        });
+        if (!membership) {
+            throw new BadRequestException('User is not an active pharmacy member');
+        }
+    }
+
+    private async requireTransferMembership(
+        tx: Prisma.TransactionClient,
+        pharmacyId: string,
+        userId: string,
+    ) {
+        const membership = await tx.pharmacyMember.findFirst({
+            where: {
+                pharmacyId,
+                userId,
+                status: 'ACTIVE',
+                role: { in: ['OWNER', 'PHARMACIST'] },
+            },
+            select: { id: true, role: true },
+        });
+        if (!membership) {
+            throw new BadRequestException('User is not an active pharmacy member with transfer authority');
+        }
+
+        const user = await tx.user.findUnique({
+            where: { id: userId },
+            select: { role: true },
+        });
+        if (!user || user.role !== membership.role) {
+            throw new BadRequestException('User role does not match pharmacy membership role');
+        }
+        return membership;
+    }
+
+    private async expireTransferOffers(
+        tx: Prisma.TransactionClient,
+        orderId: string,
+    ) {
+        await tx.pharmacyAssignment.updateMany({
+            where: {
+                orderId,
+                status: 'OFFERED',
+                expiredAt: { lte: new Date() },
+            },
+            data: { status: 'EXPIRED' },
+        });
+    }
+
+    private async offerNextEligiblePharmacy(
+        tx: Prisma.TransactionClient,
+        order: {
+            id: string;
+            deliveryLatitude: Prisma.Decimal;
+            deliveryLongitude: Prisma.Decimal;
+            status: OrderStatus;
+        },
+        actorUserId?: string,
+        requestId?: string,
+    ) {
+        const current = await this.getActiveAssignment(tx, order.id);
+        const history = await tx.pharmacyAssignment.findMany({
+            where: { orderId: order.id },
+            select: { pharmacyId: true },
+            distinct: ['pharmacyId'],
+        });
+        const excluded = new Set(history.map((item) => item.pharmacyId));
+        excluded.add(current.pharmacyId);
+
+        const pharmacies = await tx.pharmacy.findMany({
+            where: {
+                approvalStatus: 'APPROVED',
+                operationalStatus: 'OPEN',
+                id: { notIn: [...excluded] },
+            },
+            select: {
+                id: true,
+                latitude: true,
+                longitude: true,
+            },
+        });
+
+        const candidates = pharmacies
+            .map((pharmacy) => ({
+                ...pharmacy,
+                distanceKm: this.haversineKm(
+                    Number(order.deliveryLatitude),
+                    Number(order.deliveryLongitude),
+                    Number(pharmacy.latitude),
+                    Number(pharmacy.longitude),
+                ),
+            }))
+            .filter((candidate) => candidate.distanceKm <= TRANSFER_RADIUS_KM)
+            .sort(
+                (a, b) =>
+                    a.distanceKm - b.distanceKm ||
+                    a.id.localeCompare(b.id),
+            );
+
+        const candidate = candidates[0];
+        if (!candidate) {
+            await this.orderState.transition(tx, {
+                orderId: order.id,
+                from: 'PHARMACY_REVIEWING',
+                to: 'NO_PHARMACY_AVAILABLE',
+                actorUserId,
+                requestId,
+                reason: 'No eligible pharmacy remains for transfer',
+                metadata: {
+                    transferRadiusKm: TRANSFER_RADIUS_KM,
                 },
             });
-
-        if (!membership) {
-            throw new BadRequestException(
-                'User is not an active pharmacy member',
-            );
+            return null;
         }
+
+        const offeredAt = new Date();
+        const expiredAt = new Date(
+            offeredAt.getTime() +
+                TRANSFER_OFFER_EXPIRATION_MINUTES * 60 * 1000,
+        );
+
+        return tx.pharmacyAssignment.create({
+            data: {
+                orderId: order.id,
+                pharmacyId: candidate.id,
+                status: 'OFFERED',
+                offeredAt,
+                expiredAt,
+            },
+        });
+    }
+
+    private async advanceTransferAfterOfferEnd(
+        tx: Prisma.TransactionClient,
+        orderId: string,
+        actorUserId?: string,
+        requestId?: string,
+    ) {
+        const order = await tx.order.findUnique({
+            where: { id: orderId },
+            select: {
+                id: true,
+                status: true,
+                deliveryLatitude: true,
+                deliveryLongitude: true,
+            },
+        });
+        if (!order || order.status !== 'PHARMACY_REVIEWING') return;
+
+        const pending = await tx.pharmacyAssignment.findFirst({
+            where: { orderId, status: 'OFFERED' },
+            select: { id: true },
+        });
+        if (pending) return;
+
+        await this.offerNextEligiblePharmacy(
+            tx,
+            order,
+            actorUserId,
+            requestId,
+        );
+    }
+
+    private haversineKm(
+        latitude1: number,
+        longitude1: number,
+        latitude2: number,
+        longitude2: number,
+    ) {
+        const earthRadiusKm = 6371.0088;
+        const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+        const dLatitude = toRadians(latitude2 - latitude1);
+        const dLongitude = toRadians(longitude2 - longitude1);
+        const a =
+            Math.sin(dLatitude / 2) ** 2 +
+            Math.cos(toRadians(latitude1)) *
+                Math.cos(toRadians(latitude2)) *
+                Math.sin(dLongitude / 2) ** 2;
+        return 2 * earthRadiusKm * Math.asin(Math.sqrt(a));
     }
 
     private validateQuoteItems(
