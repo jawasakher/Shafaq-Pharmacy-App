@@ -1,0 +1,21 @@
+{
+  "name": "shafaq",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shafaq pharmacy delivery and pharmacist consultation platform",
+  "scripts": {
+    "server:build": "npm --prefix apps/server run build",
+    "server:start": "npm --prefix apps/server run start",
+    "server:dev": "npm --prefix apps/server run start:dev",
+    "server:test": "npm --prefix apps/server run test",
+    "server:test:e2e": "npm --prefix apps/server run test:e2e",
+    "server:lint": "npm --prefix apps/server run lint",
+    "server:prisma:generate": "npm --prefix apps/server exec prisma generate",
+    "server:prisma:migrate": "npm --prefix apps/server exec prisma migrate deploy",
+    "mobile:start": "npm --prefix apps/mobile run start",
+    "mobile:android": "npm --prefix apps/mobile run android",
+    "mobile:ios": "npm --prefix apps/mobile run ios",
+    "mobile:web": "npm --prefix apps/mobile run web",
+    "mobile:lint": "npm --prefix apps/mobile run lint"
+  }
+}
