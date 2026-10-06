@@ -321,6 +321,7 @@ This entity is the central aggregate for the medicine-delivery workflow.
 ```text
 PENDING
 PHARMACY_REVIEWING
+NO_PHARMACY_AVAILABLE
 PHARMACY_CONFIRMED
 CUSTOMER_CONFIRMATION_PENDING
 PAYMENT_PENDING
@@ -1064,3 +1065,8 @@ If a database change modifies business behavior, the relevant documentation must
 No business-critical relationship should be introduced only because it is convenient for the frontend.
 
 The database model must reflect the business domain rather than frontend screen structure.
+
+
+# Transfer configuration and assignment lifecycle
+
+`PharmacyAssignment` stores `offeredAt` and `expiredAt` for transfer offers. Transfer candidate eligibility is calculated from approved/open pharmacies within **10 km** of the order delivery coordinates. Candidate ordering is deterministic: distance ascending, then pharmacy ID ascending. Rejected, expired, and previously participating pharmacies are excluded. A new offer expires **15 minutes** after `offeredAt`. When no eligible candidate remains, the order transitions from `PHARMACY_REVIEWING` to `NO_PHARMACY_AVAILABLE` and the transition is recorded in `OrderStateHistory`.
