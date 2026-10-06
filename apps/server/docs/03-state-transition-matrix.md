@@ -511,3 +511,23 @@ The SRS remains the business-rule authority.
 The State Transition Matrix is the implementation-level state-machine authority derived from the SRS.
 
 If implementation code conflicts with this document, the conflict must be resolved before proceeding with the affected feature.
+
+
+# 13. Order State History
+
+Every order state transition must create an `OrderStateHistory` record in the same database transaction as the state mutation.
+
+Each history record stores:
+
+- orderId
+- previousState
+- newState
+- actorUserId when an authenticated actor caused the transition
+- reason when available
+- requestId when available
+- metadata when safe and useful
+- timestamp
+
+A transition is not considered committed unless both the order state mutation and its history record commit successfully.
+
+Direct order status mutations outside the state-transition mechanism are prohibited.
