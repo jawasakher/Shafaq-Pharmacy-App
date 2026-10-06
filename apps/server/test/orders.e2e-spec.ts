@@ -1086,21 +1086,11 @@ describe('Orders API (e2e)', () => {
         });
         const offerC = await prisma.pharmacyAssignment.create({
             data: {
-                orderId: orderId,
+                orderId,
                 pharmacyId: pharmacyC.id,
                 status: 'OFFERED',
                 expiredAt: new Date(Date.now() + 15 * 60 * 1000),
             },
-        }).catch(async () => {
-            const created = await prisma.pharmacyAssignment.create({
-                data: {
-                    orderId,
-                    pharmacyId: pharmacyC.id,
-                    status: 'OFFERED',
-                    expiredAt: new Date(Date.now() + 15 * 60 * 1000),
-                },
-            });
-            return created;
         });
 
         const [acceptB, acceptC] = await Promise.allSettled([
