@@ -4,7 +4,7 @@ import {
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
@@ -24,7 +24,7 @@ export class OrdersService {
         private readonly orderState: OrderStateService,
     ) {}
 
-    async createOrder(customerId: string, dto: CreateOrderDto) {
+    async createOrder(customerId: string, dto: CreateOrderDto, requestId?: string) {
         const customer = await this.prisma.user.findUnique({
             where: { id: customerId },
             select: {
@@ -299,6 +299,7 @@ export class OrdersService {
                     from: 'PENDING',
                     to: 'PHARMACY_REVIEWING',
                     actorUserId,
+                    requestId,
                     requestId,
                     reason: 'Pharmacy assignment accepted',
                 });
