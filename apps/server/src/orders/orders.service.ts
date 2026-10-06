@@ -10,12 +10,14 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
 import { DeliveryPricingService } from './delivery-pricing.service.js';
 import { PharmacyQuoteDto } from './dto/pharmacy-quote.dto.js';
+import { OrderStateService } from './order-state.service.js';
 
 @Injectable()
 export class OrdersService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly deliveryPricing: DeliveryPricingService,
+        private readonly orderState: OrderStateService,
     ) {}
 
     async createOrder(customerId: string, dto: CreateOrderDto) {
@@ -258,23 +260,13 @@ export class OrdersService {
             }
 
             if (order.status === 'PENDING') {
-                const movedToReview =
-                    await tx.order.updateMany({
-                        where: {
-                            id: order.id,
-                            status: 'PENDING',
-                        },
-                        data: {
-                            status:
-                                'PHARMACY_REVIEWING',
-                        },
-                    });
-
-                if (movedToReview.count !== 1) {
-                    throw new ConflictException(
-                        'Order is no longer available for pharmacy review',
-                    );
-                }
+                await this.orderState.transition(tx, {
+                    orderId: order.id,
+                    from: 'PENDING',
+                    to: 'PHARMACY_REVIEWING',
+                    actorUserId,
+                    reason: 'Pharmacy assignment accepted',
+                });
             }
 
             return tx.pharmacyAssignment.findUniqueOrThrow({
@@ -582,22 +574,13 @@ export class OrdersService {
                 );
             }
 
-            const updated =
-                await tx.order.updateMany({
-                    where: {
-                        id: order.id,
-                        status: 'PENDING',
-                    },
-                    data: {
-                        status: 'PHARMACY_REVIEWING',
-                    },
-                });
-
-            if (updated.count !== 1) {
-                throw new ConflictException(
-                    'Order state changed before pharmacy review started',
-                );
-            }
+            await this.orderState.transition(tx, {
+                orderId: order.id,
+                from: 'PENDING',
+                to: 'PHARMACY_REVIEWING',
+                actorUserId,
+                reason: 'Pharmacy review started',
+            });
 
             return this.getOrderForResponse(
                 tx,
@@ -826,16 +809,23 @@ export class OrdersService {
                     pricingQuoteAt:
                         pricing.calculatedAt,
                     pricingSupported: true,
-                    status: 'PHARMACY_CONFIRMED',
                 },
             });
 
-            await tx.order.update({
-                where: { id: order.id },
-                data: {
-                    status:
-                        'CUSTOMER_CONFIRMATION_PENDING',
-                },
+            await this.orderState.transition(tx, {
+                orderId: order.id,
+                from: 'PHARMACY_REVIEWING',
+                to: 'PHARMACY_CONFIRMED',
+                actorUserId,
+                reason: 'Pharmacy confirmed complete order and authoritative price',
+            });
+
+            await this.orderState.transition(tx, {
+                orderId: order.id,
+                from: 'PHARMACY_CONFIRMED',
+                to: 'CUSTOMER_CONFIRMATION_PENDING',
+                actorUserId,
+                reason: 'Final price is available for customer confirmation',
             });
 
             return this.getOrderForResponse(
@@ -893,24 +883,16 @@ export class OrdersService {
                     ? 'PAYMENT_PENDING'
                     : 'CLOSED';
 
-            const updated =
-                await tx.order.updateMany({
-                    where: {
-                        id: order.id,
-                        customerId,
-                        status:
-                            'CUSTOMER_CONFIRMATION_PENDING',
-                    },
-                    data: {
-                        status: nextStatus,
-                    },
-                });
-
-            if (updated.count !== 1) {
-                throw new ConflictException(
-                    'Order state changed before customer price response',
-                );
-            }
+            await this.orderState.transition(tx, {
+                orderId: order.id,
+                from: 'CUSTOMER_CONFIRMATION_PENDING',
+                to: nextStatus,
+                actorUserId: customerId,
+                reason:
+                    decision === 'ACCEPT'
+                        ? 'Customer accepted final price'
+                        : 'Customer rejected final price',
+            });
 
             return this.getOrderForResponse(
                 tx,
