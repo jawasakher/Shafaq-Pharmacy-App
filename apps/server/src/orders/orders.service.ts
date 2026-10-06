@@ -144,7 +144,7 @@ export class OrdersService {
                 throw new NotFoundException('Pharmacy assignment not found');
             }
 
-            const membership = await this.requireTransferMembership(
+            await this.requireTransferMembership(
                 tx,
                 assignment.pharmacyId,
                 actorUserId,
