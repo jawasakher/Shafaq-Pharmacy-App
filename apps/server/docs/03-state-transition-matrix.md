@@ -185,8 +185,8 @@ If any requested item is unavailable:
 * A receiving pharmacy is offered the complete original order and must explicitly
 	accept it before its assignment becomes `ACTIVE`.
 * The receiving pharmacy reviews the complete order again.
-* If no eligible pharmacy accepts, the order transitions to `CLOSED` according to
-	the existing `PHARMACY_REVIEWING -> CLOSED` rule.
+* If no eligible pharmacy remains, the order transitions to `NO_PHARMACY_AVAILABLE` according to
+	the `PHARMACY_REVIEWING -> NO_PHARMACY_AVAILABLE` rule.
 
 There is no partial customer confirmation and no new order status for
 unavailable medicines. `medicineSubtotal` is finalized only when the complete
