@@ -59,6 +59,7 @@ export class PharmacyAssignmentsController {
             data: await this.ordersService.acceptPharmacyAssignment(
                 assignmentId,
                 request.user.id,
+                this.requestId(request),
             ),
         };
     }
@@ -75,9 +76,14 @@ export class PharmacyAssignmentsController {
             data: await this.ordersService.rejectPharmacyAssignment(
                 assignmentId,
                 request.user.id,
+                this.requestId(request),
             ),
         };
     }
 
+    private requestId(request: AuthenticatedRequest) {
+        const value = request.headers['x-request-id'];
+        return Array.isArray(value) ? value[0] : value;
+    }
 }
 
