@@ -263,7 +263,7 @@ describe('Prescription API (e2e)', () => {
                 .expect(200);
 
         expect(getResponse.body.downloadUrl).toMatch(
-            /\\/api\\/v1\\/prescriptions\\/file\\?token=/,
+            /\/api\/v1\/prescriptions\/file\?token=/,
         );
 
         const signedPath =
