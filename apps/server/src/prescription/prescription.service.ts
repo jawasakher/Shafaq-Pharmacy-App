@@ -418,7 +418,11 @@ export class PrescriptionService {
 
     private safeOriginalFileName(name: string) {
         return (
-            name.replace(/[\\/\u0000]/g, '_').trim().slice(0, 255) ||
+            name
+                .replace(/[\\/]/g, '_')
+                .replaceAll(String.fromCharCode(0), '_')
+                .trim()
+                .slice(0, 255) ||
             'prescription'
         );
     }
