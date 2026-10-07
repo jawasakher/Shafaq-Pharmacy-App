@@ -14,11 +14,12 @@ describe('Identity authentication (e2e)', () => {
 
   const nextTestPhone = () =>
     `+963991${Date.now().toString().slice(-6)}${++phoneSequence}`;
+
   let otpDelivery: TestOtpDeliveryService;
   let prisma: PrismaService;
   let sessions: AuthSessionService;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
@@ -27,18 +28,22 @@ describe('Identity authentication (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
+
     await app.init();
+
     otpDelivery = app.get<TestOtpDeliveryService>(OTP_DELIVERY);
     prisma = app.get(PrismaService);
     sessions = app.get(AuthSessionService);
   });
 
-  afterEach(async () => {
+  afterAll(async () => {
     await app.close();
   });
 
   it('completes OTP login, reads /me, and revokes the session on logout', async () => {
     const phone = nextTestPhone();
+
+    console.log('STEP 1: OTP request');
 
     await request(app.getHttpServer())
       .post('/api/v1/auth/otp/request')
@@ -51,20 +56,30 @@ describe('Identity authentication (e2e)', () => {
         expect(body.data).not.toHaveProperty('code');
       });
 
+    console.log('STEP 1 DONE');
+
     const code = otpDelivery.getCode(phone);
+
     expect(code).toMatch(/^\d{6}$/);
+
+    console.log('STEP 2: OTP verify');
 
     const verifyResponse = await request(app.getHttpServer())
       .post('/api/v1/auth/otp/verify')
       .send({ phone, code })
       .expect(201);
 
+    console.log('STEP 2 DONE');
+
     expect(verifyResponse.body.success).toBe(true);
     expect(verifyResponse.body.data.user.phone).toBe(phone);
     expect(verifyResponse.body.data.user.role).toBe('CUSTOMER');
 
     const token = verifyResponse.body.data.session.token;
+
     expect(token).toEqual(expect.any(String));
+
+    console.log('STEP 3: GET /me');
 
     await request(app.getHttpServer())
       .get('/api/v1/me')
@@ -76,6 +91,10 @@ describe('Identity authentication (e2e)', () => {
         expect(body.data.role).toBe('CUSTOMER');
       });
 
+    console.log('STEP 3 DONE');
+
+    console.log('STEP 4: logout');
+
     await request(app.getHttpServer())
       .post('/api/v1/auth/logout')
       .set('Authorization', `Bearer ${token}`)
@@ -85,10 +104,16 @@ describe('Identity authentication (e2e)', () => {
         expect(body.data).toBeNull();
       });
 
+    console.log('STEP 4 DONE');
+
+    console.log('STEP 5: GET /me after logout');
+
     await request(app.getHttpServer())
       .get('/api/v1/me')
       .set('Authorization', `Bearer ${token}`)
       .expect(401);
+
+    console.log('STEP 5 DONE');
   });
 
   it('rejects a second OTP request while the first OTP is still valid', async () => {
@@ -120,7 +145,7 @@ describe('Identity authentication (e2e)', () => {
       await request(app.getHttpServer())
         .post('/api/v1/auth/otp/verify')
         .send({ phone, code: '000000' })
-        .expect(attempt === 5 ? 401 : 401);
+        .expect(401);
     }
 
     await request(app.getHttpServer())
@@ -139,6 +164,7 @@ describe('Identity authentication (e2e)', () => {
       .expect(201);
 
     const code = otpDelivery.getCode(phone);
+
     expect(code).toMatch(/^\d{6}$/);
 
     await request(app.getHttpServer())
@@ -167,6 +193,7 @@ describe('Identity authentication (e2e)', () => {
     const statuses = results
       .map((result) => result.status)
       .sort((a, b) => a - b);
+
     expect(statuses).toEqual([201, 409]);
   });
 
@@ -181,7 +208,11 @@ describe('Identity authentication (e2e)', () => {
     });
 
     const session = await sessions.createInternalSession(user.id);
-    const authenticated = await sessions.authenticate(session.token, 'INTERNAL');
+
+    const authenticated = await sessions.authenticate(
+      session.token,
+      'INTERNAL',
+    );
 
     expect(authenticated.id).toBe(user.id);
     expect(authenticated.role).toBe('ADMIN');
@@ -190,7 +221,10 @@ describe('Identity authentication (e2e)', () => {
       sessions.authenticate(session.token, 'CUSTOMER'),
     ).rejects.toThrow('Invalid or expired session');
 
-    await prisma.user.delete({ where: { id: user.id } });
+    await prisma.user.delete({
+      where: {
+        id: user.id,
+      },
+    });
   });
-
 });
