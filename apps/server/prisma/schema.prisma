@@ -139,6 +139,23 @@ enum DeliveryOfferStatus {
   CANCELLED
 }
 
+enum DeliveryOtpStatus {
+  ACTIVE
+  CONSUMED
+  EXPIRED
+  REVOKED
+  LOCKED
+}
+
+enum CashCollectionStatus {
+  NOT_DUE
+  DUE
+  RECEIVED
+  UNPAID
+  PARTIALLY_PAID
+  DISPUTED
+}
+
 model User {
   id        String   @id @default(uuid())
   phone     String   @unique
@@ -437,6 +454,8 @@ model Delivery {
   offers DeliveryOffer[]
   currentLocations DriverCurrentLocation[]
   locationHistory  DriverLocationHistory[]
+  otps             DeliveryOtp[]
+  cashCollection   CashCollection?
 
   @@index([orderId])
   @@index([driverId, status])
@@ -494,6 +513,44 @@ model DriverLocationHistory {
   @@index([driverId, recordedAt])
   @@index([deliveryId, recordedAt])
 }
+
+model DeliveryOtp {
+  id           String            @id @default(uuid())
+  deliveryId   String
+  delivery     Delivery          @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  otpHash      String
+  status       DeliveryOtpStatus @default(ACTIVE)
+  expiresAt    DateTime
+  attemptCount Int               @default(0)
+  maxAttempts  Int               @default(3)
+  consumedAt   DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([deliveryId, status])
+  @@index([expiresAt])
+}
+
+model CashCollection {
+  id                  String               @id @default(uuid())
+  deliveryId          String               @unique
+  delivery            Delivery             @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  expectedAmount      Decimal              @db.Decimal(12, 2)
+  receivedAmount      Decimal?             @db.Decimal(12, 2)
+  currency            String               @db.VarChar(3) @default("SYP")
+  status              CashCollectionStatus @default(NOT_DUE)
+  verifiedByUserId    String?
+  verificationMethod  String?
+  receivedAt          DateTime?
+  reason              String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  @@index([deliveryId, status])
+  @@index([status, createdAt])
+}
+
 
 
 
