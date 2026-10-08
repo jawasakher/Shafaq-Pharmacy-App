@@ -204,6 +204,8 @@ model User {
   consultationsAsPharmacist   Consultation[]                  @relation("PharmacistConsultations")
   assignedByHistory           ConsultationAssignmentHistory[] @relation("AssignmentAssigner")
   chatMessagesSent            ChatMessage[]
+  notifications               Notification[]
+  auditLogs                   AuditLog[]                      @relation("AuditActor")
 
   @@index([role])
 }
@@ -696,5 +698,37 @@ model ChatMessage {
 
   @@index([consultationId, createdAt])
 }
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  type      String
+  isRead    Boolean   @default(false)
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  requestId  String?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
 
 
