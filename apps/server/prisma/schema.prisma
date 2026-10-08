@@ -239,6 +239,8 @@ model Driver {
 
   deliveries     Delivery[]
   deliveryOffers DeliveryOffer[]
+  currentLocation DriverCurrentLocation?
+  locationHistory DriverLocationHistory[]
 
   @@index([approvalStatus])
   @@index([availability])
@@ -433,6 +435,8 @@ model Delivery {
   updatedAt        DateTime       @updatedAt
 
   offers DeliveryOffer[]
+  currentLocations DriverCurrentLocation[]
+  locationHistory  DriverLocationHistory[]
 
   @@index([orderId])
   @@index([driverId, status])
@@ -457,3 +461,39 @@ model DeliveryOffer {
   @@index([deliveryId, status])
   @@index([driverId, status])
 }
+
+model DriverCurrentLocation {
+  id         String    @id @default(uuid())
+  driverId   String    @unique
+  driver     Driver    @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  deliveryId String?
+  delivery   Delivery? @relation(fields: [deliveryId], references: [id], onDelete: SetNull)
+  latitude   Decimal   @db.Decimal(10, 7)
+  longitude  Decimal   @db.Decimal(10, 7)
+  heading    Decimal?  @db.Decimal(5, 2)
+  speed      Decimal?  @db.Decimal(5, 2)
+  recordedAt DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([deliveryId])
+  @@index([recordedAt])
+}
+
+model DriverLocationHistory {
+  id         String    @id @default(uuid())
+  driverId   String
+  driver     Driver    @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  deliveryId String?
+  delivery   Delivery? @relation(fields: [deliveryId], references: [id], onDelete: SetNull)
+  latitude   Decimal   @db.Decimal(10, 7)
+  longitude  Decimal   @db.Decimal(10, 7)
+  heading    Decimal?  @db.Decimal(5, 2)
+  speed      Decimal?  @db.Decimal(5, 2)
+  recordedAt DateTime  @default(now())
+
+  @@index([driverId, recordedAt])
+  @@index([deliveryId, recordedAt])
+}
+
+
+
