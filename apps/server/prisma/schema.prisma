@@ -172,6 +172,16 @@ enum CustodianType {
   OTHER
 }
 
+enum ConsultationStatus {
+  REQUESTED
+  ASSIGNED
+  IN_PROGRESS
+  WAITING_FOR_CUSTOMER
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
 model User {
   id        String   @id @default(uuid())
   phone     String   @unique
@@ -190,6 +200,10 @@ model User {
 
   driver             Driver?
   deliveryExceptions DeliveryException[]
+  consultationsAsCustomer     Consultation[]                  @relation("CustomerConsultations")
+  consultationsAsPharmacist   Consultation[]                  @relation("PharmacistConsultations")
+  assignedByHistory           ConsultationAssignmentHistory[] @relation("AssignmentAssigner")
+  chatMessagesSent            ChatMessage[]
 
   @@index([role])
 }
@@ -240,6 +254,7 @@ model Pharmacy {
   orders              Order[]
   pharmacyAssignments PharmacyAssignment[]
   pricingOriginOrders Order[]              @relation("OrderPricingOriginPharmacy")
+  consultations       Consultation[]
 
   @@index([approvalStatus])
   @@index([operationalStatus])
@@ -331,6 +346,7 @@ model Order {
   prescription Prescription?
   payments     Payment[]
   deliveries   Delivery[]
+  stateHistory OrderStateHistory[]
 
   @@index([customerId, createdAt])
   @@index([pharmacyId, status])
@@ -475,6 +491,7 @@ model Delivery {
   otps             DeliveryOtp[]
   cashCollection   CashCollection?
   exception        DeliveryException?
+  stateHistory     DeliveryStateHistory[]
 
   @@index([orderId])
   @@index([driverId, status])
@@ -592,3 +609,92 @@ model DeliveryException {
   @@index([deliveryId])
   @@index([driverId])
 }
+
+model OrderStateHistory {
+  id            String      @id @default(uuid())
+  orderId       String
+  order         Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  previousState String?
+  newState      OrderStatus
+  actorId       String?
+  reason        String?
+  metadata      Json?
+  timestamp     DateTime    @default(now())
+
+  @@index([orderId, timestamp])
+  @@index([timestamp])
+}
+
+model DeliveryStateHistory {
+  id            String         @id @default(uuid())
+  deliveryId    String
+  delivery      Delivery       @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  previousState String?
+  newState      DeliveryStatus
+  actorId       String?
+  reason        String?
+  metadata      Json?
+  timestamp     DateTime       @default(now())
+
+  @@index([deliveryId, timestamp])
+  @@index([timestamp])
+}
+
+model Consultation {
+  id                 String             @id @default(uuid())
+  customerId         String
+  customer           User               @relation("CustomerConsultations", fields: [customerId], references: [id], onDelete: Restrict)
+  pharmacistId       String?
+  pharmacist         User?              @relation("PharmacistConsultations", fields: [pharmacistId], references: [id], onDelete: SetNull)
+  pharmacyId         String?
+  pharmacy           Pharmacy?          @relation(fields: [pharmacyId], references: [id], onDelete: SetNull)
+  status             ConsultationStatus @default(REQUESTED)
+  symptoms           String
+  duration           String
+  age                Int
+  currentMedications String?
+  allergies          String?
+  additionalDetails  String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  assignmentHistory ConsultationAssignmentHistory[]
+  messages          ChatMessage[]
+
+  @@index([customerId, status])
+  @@index([pharmacistId, status])
+  @@index([pharmacyId, status])
+  @@index([status, createdAt])
+}
+
+model ConsultationAssignmentHistory {
+  id               String       @id @default(uuid())
+  consultationId   String
+  consultation     Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  pharmacistId     String
+  assignedByUserId String
+  assignedByUser   User         @relation("AssignmentAssigner", fields: [assignedByUserId], references: [id], onDelete: Restrict)
+  assignedAt       DateTime     @default(now())
+  unassignedAt     DateTime?
+  reason           String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([consultationId])
+  @@index([pharmacistId])
+}
+
+model ChatMessage {
+  id             String       @id @default(uuid())
+  consultationId String
+  consultation   Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  content        String
+  createdAt      DateTime     @default(now())
+  readAt         DateTime?
+
+  @@index([consultationId, createdAt])
+}
+
+
