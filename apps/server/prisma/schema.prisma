@@ -114,6 +114,31 @@ enum PaymentStatus {
   PARTIALLY_REFUNDED
 }
 
+enum DeliveryStatus {
+  NOT_STARTED
+  SEARCHING_FOR_DRIVER
+  DRIVER_ASSIGNED
+  GOING_TO_PHARMACY
+  ARRIVED_AT_PHARMACY
+  HANDOVER_PENDING
+  PICKED_UP
+  ON_THE_WAY
+  ARRIVING_SOON
+  OTP_PENDING
+  DELIVERED
+  CASH_PENDING
+  COMPLETED
+  EXCEPTION
+}
+
+enum DeliveryOfferStatus {
+  OFFERED
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
 model User {
   id        String   @id @default(uuid())
   phone     String   @unique
@@ -212,6 +237,9 @@ model Driver {
   createdAt      DateTime                 @default(now())
   updatedAt      DateTime                 @updatedAt
 
+  deliveries     Delivery[]
+  deliveryOffers DeliveryOffer[]
+
   @@index([approvalStatus])
   @@index([availability])
   @@index([approvalStatus, availability])
@@ -265,6 +293,7 @@ model Order {
   assignments  PharmacyAssignment[]
   prescription Prescription?
   payments     Payment[]
+  deliveries   Delivery[]
 
   @@index([customerId, createdAt])
   @@index([pharmacyId, status])
@@ -381,4 +410,50 @@ model PaymentEvent {
   createdAt       DateTime @default(now())
 
   @@index([paymentId])
+}
+
+model Delivery {
+  id               String         @id @default(uuid())
+  orderId          String
+  order            Order          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  driverId         String?
+  driver           Driver?        @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  status           DeliveryStatus @default(NOT_STARTED)
+  pickupAddress    String
+  pickupLatitude   Decimal        @db.Decimal(10, 7)
+  pickupLongitude  Decimal        @db.Decimal(10, 7)
+  dropoffAddress   String
+  dropoffLatitude  Decimal        @db.Decimal(10, 7)
+  dropoffLongitude Decimal        @db.Decimal(10, 7)
+  startedAt        DateTime?
+  pickedUpAt       DateTime?
+  deliveredAt      DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  offers DeliveryOffer[]
+
+  @@index([orderId])
+  @@index([driverId, status])
+  @@index([status, createdAt])
+}
+
+model DeliveryOffer {
+  id            String              @id @default(uuid())
+  deliveryId    String
+  delivery      Delivery            @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  driverId      String
+  driver        Driver              @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  status        DeliveryOfferStatus @default(OFFERED)
+  offeredAt     DateTime            @default(now())
+  expiresAt     DateTime?
+  acceptedAt    DateTime?
+  rejectedAt    DateTime?
+  failureReason String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([deliveryId, status])
+  @@index([driverId, status])
 }
