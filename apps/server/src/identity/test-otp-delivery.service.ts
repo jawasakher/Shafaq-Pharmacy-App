@@ -6,12 +6,12 @@ import { type OtpDeliveryPort } from './otp-delivery.port.js';
 export class TestOtpDeliveryService implements OtpDeliveryPort {
   private readonly codes = new Map<string, string>();
 
-  async sendOtp(phone: string, code: string): Promise<void> {
-    this.codes.set(phone, code);
+  async sendOtp(target: string, code: string, contextName?: string): Promise<void> {
+    this.codes.set(target, code);
   }
 
-  getCode(phone: string): string | undefined {
-    return this.codes.get(phone);
+  getCode(target: string): string | undefined {
+    return this.codes.get(target);
   }
 
   clear(): void {

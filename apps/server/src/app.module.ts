@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
 
+import { AdminModule } from './admin/admin.module.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
+import { ConsultationModule } from './consultation/consultation.module.js';
+import { DeliveryModule } from './delivery/delivery.module.js';
 import { IdentityModule } from './identity/identity.module.js';
 import { OrdersModule } from './orders/orders.module.js';
 import { PharmacyModule } from './pharmacy/pharmacy.module.js';
@@ -15,6 +18,9 @@ import { PrismaModule } from './prisma/prisma.module.js';
     PharmacyModule,
     OrdersModule,
     PrescriptionModule,
+    DeliveryModule,
+    ConsultationModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [AppService],

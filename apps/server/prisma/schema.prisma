@@ -58,6 +58,7 @@ enum AddressType {
 enum SessionType {
   CUSTOMER
   INTERNAL
+  PRE_MFA
 }
 
 enum OrderStatus {
@@ -74,6 +75,8 @@ enum OrderStatus {
   COMPLETED
   CLOSED
   EXCEPTION
+  NO_PHARMACY_AVAILABLE
+  FAILED
 }
 
 enum OrderItemStatus {
@@ -183,12 +186,15 @@ enum ConsultationStatus {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  phone     String   @unique
-  name      String?
-  role      UserRole @default(CUSTOMER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(uuid())
+  phone      String   @unique
+  email      String?  @unique
+  name       String?
+  role       UserRole @default(CUSTOMER)
+  mfaSecret  String?
+  mfaEnabled Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   pharmacyMemberships PharmacyMember[]
   addresses           Address[]
@@ -213,6 +219,7 @@ model User {
 model OtpChallenge {
   id         String    @id @default(uuid())
   phoneHash  String
+  purpose    String    @default("CUSTOMER")
   activeKey  String?   @unique
   codeHash   String
   expiresAt  DateTime

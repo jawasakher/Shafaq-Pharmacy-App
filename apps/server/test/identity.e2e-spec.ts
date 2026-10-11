@@ -227,4 +227,73 @@ describe('Identity authentication (e2e)', () => {
       },
     });
   });
+
+  it('prevents simultaneous verification of the same OTP code', async () => {
+    const phone = nextTestPhone();
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/otp/request')
+      .set('x-device-id', 'e2e-device-race-verify')
+      .send({ phone })
+      .expect(201);
+
+    const code = otpDelivery.getCode(phone);
+
+    const results = await Promise.all([
+      request(app.getHttpServer())
+        .post('/api/v1/auth/otp/verify')
+        .send({ phone, code }),
+      request(app.getHttpServer())
+        .post('/api/v1/auth/otp/verify')
+        .send({ phone, code }),
+    ]);
+
+    const statuses = results.map((r) => r.status).sort((a, b) => a - b);
+    expect(statuses).toEqual([201, 401]);
+  });
+
+  it('issues a PRE_MFA session for admin when MFA is enabled and restricts access to internal endpoints', async () => {
+    const phone = nextTestPhone();
+
+    const user = await prisma.user.create({
+      data: {
+        phone,
+        role: 'ADMIN',
+        mfaEnabled: true,
+        mfaSecret: 'test-mfa-secret',
+      },
+    });
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/otp/request')
+      .send({ phone, purpose: 'INTERNAL' })
+      .expect(201);
+
+    const code = otpDelivery.getCode(phone);
+
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/auth/otp/verify')
+      .send({ phone, code, purpose: 'INTERNAL' })
+      .expect(201);
+
+    expect(res.body.data.requiresMfa).toBe(true);
+    const preMfaToken = res.body.data.session.token;
+
+    // Verify PRE_MFA token is rejected by InternalIdentityGuard
+    await request(app.getHttpServer())
+      .get('/api/v1/pharmacies/admin/applications')
+      .set('Authorization', `Bearer ${preMfaToken}`)
+      .expect(401);
+
+    // Verify MFA token
+    const mfaRes = await request(app.getHttpServer())
+      .post('/api/v1/auth/mfa/verify')
+      .set('Authorization', `Bearer ${preMfaToken}`)
+      .send({ code: '123456' })
+      .expect(201);
+
+    expect(mfaRes.body.data.session.token).toEqual(expect.any(String));
+
+    await prisma.user.delete({ where: { id: user.id } });
+  });
 });
