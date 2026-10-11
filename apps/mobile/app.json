@@ -1,16 +1,26 @@
 {
   "expo": {
-    "name": "y",
-    "slug": "y",
+    "name": "شَفَق",
+    "slug": "shafaq",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "y",
+    "scheme": "shafaq",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
     },
     "android": {
+      "package": "com.shafaq.mobile",
+      "versionCode": 1,
+      "permissions": [
+        "INTERNET",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

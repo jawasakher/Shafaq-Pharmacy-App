@@ -1,11 +1,41 @@
-import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
+const ADDRESS_KEY = '@shafaq_address';
+
+type SavedAddress = {
+  address: string;
+  details: string;
+};
+
 export default function HomeScreen() {
+  const [savedAddress, setSavedAddress] = useState<SavedAddress | null>(null);
+
+  const loadSavedAddress = useCallback(async () => {
+    try {
+      const stored = await AsyncStorage.getItem(ADDRESS_KEY);
+      if (stored) {
+        setSavedAddress(JSON.parse(stored));
+      } else {
+        setSavedAddress(null);
+      }
+    } catch {
+      setSavedAddress(null);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadSavedAddress();
+    }, [loadSavedAddress]),
+  );
+
   return (
       <ThemedView style={styles.container}>
         <SafeAreaView style={styles.safeArea}>
@@ -29,11 +59,14 @@ export default function HomeScreen() {
                 </ThemedText>
               </View>
 
-              <View style={styles.locationBadge}>
+              <Pressable
+                onPress={() => router.push('/notifications')}
+                style={styles.locationBadge}
+              >
                 <ThemedText style={styles.locationIcon}>
-                  ⌖
+                  🔔
                 </ThemedText>
-              </View>
+              </Pressable>
             </View>
 
             {/* Hero */}
@@ -85,10 +118,6 @@ export default function HomeScreen() {
                     اختر صيدلية وأرسل طلبك
                   </ThemedText>
                 </View>
-
-                <ThemedText style={styles.arrow}>
-                  ←
-                </ThemedText>
               </Pressable>
 
               {/* Consultation */}
@@ -114,23 +143,19 @@ export default function HomeScreen() {
                     تحدث مع صيدلي واحصل على الإرشاد
                   </ThemedText>
                 </View>
-
-                <ThemedText style={styles.arrowSecondary}>
-                  ←
-                </ThemedText>
               </Pressable>
             </View>
 
-            {/* Location */}
+            {/* Location / Address Card */}
             <View style={styles.locationCard}>
               <View style={styles.locationCardHeader}>
                 <View style={styles.locationContent}>
                   <ThemedText style={styles.locationTitle}>
-                    موقع التوصيل
+                    عنوان التوصيل
                   </ThemedText>
 
                   <ThemedText style={styles.locationText}>
-                    سيتم تحديد موقعك الحالي تلقائيًا
+                    {savedAddress ? savedAddress.address : 'لم تقم بحفظ عنوان توصيل بعد'}
                   </ThemedText>
                 </View>
 
@@ -141,13 +166,12 @@ export default function HomeScreen() {
                 </View>
               </View>
 
-              <Pressable style={styles.locationButton}>
+              <Pressable
+                style={styles.locationButton}
+                onPress={() => router.push('/addresses')}
+              >
                 <ThemedText style={styles.changeLocation}>
-                  استخدام موقعي الحالي
-                </ThemedText>
-
-                <ThemedText style={styles.locationArrow}>
-                  ←
+                  إدارة العناوين المسجلة
                 </ThemedText>
               </Pressable>
             </View>
@@ -160,7 +184,7 @@ export default function HomeScreen() {
                 رعاية هادئة وخدمة تصل إليك باهتمام
               </ThemedText>
 
-              <View style={styles.trustLine} />
+              <ThemedText style={styles.trustLine} />
             </View>
           </ScrollView>
         </SafeAreaView>

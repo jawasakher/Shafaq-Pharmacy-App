@@ -1,3 +1,4 @@
+import { getAuthToken, logout } from "../lib/auth";
 import { API_BASE_URL } from "./api";
 
 type ApiRequestOptions = RequestInit & {
@@ -8,7 +9,15 @@ export async function apiRequest<T>(
   path: string,
   options: ApiRequestOptions = {},
 ): Promise<T> {
-  const { token, headers, ...requestOptions } = options;
+  let { token, headers, ...requestOptions } = options;
+
+  if (!token) {
+    try {
+      token = (await getAuthToken()) || undefined;
+    } catch {
+      // Ignore storage read errors
+    }
+  }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...requestOptions,
@@ -18,6 +27,14 @@ export async function apiRequest<T>(
       ...headers,
     },
   });
+
+  if (response.status === 401) {
+    try {
+      await logout();
+    } catch {
+      // Ignore storage clear errors
+    }
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -29,3 +46,5 @@ export async function apiRequest<T>(
 
   return response.json() as Promise<T>;
 }
+
+

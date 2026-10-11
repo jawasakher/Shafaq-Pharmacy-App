@@ -165,8 +165,6 @@ export default function PrivacySecurityScreen() {
             <View style={styles.cardContent}>
               <View style={styles.cardTitleRow}>
                 <Text style={styles.cardTitle}>حماية معلوماتك</Text>
-
-                <Text style={styles.arrow}>‹</Text>
               </View>
 
               <Text style={styles.cardText}>
@@ -191,8 +189,6 @@ export default function PrivacySecurityScreen() {
             <View style={styles.cardContent}>
               <View style={styles.cardTitleRow}>
                 <Text style={styles.cardTitle}>خصوصية الاستشارة</Text>
-
-                <Text style={styles.arrow}>‹</Text>
               </View>
 
               <Text style={styles.cardText}>

@@ -129,8 +129,6 @@ export default function AccountScreen() {
                   {item.subtitle}
                 </Text>
               </View>
-
-              <Text style={styles.arrow}>‹</Text>
             </TouchableOpacity>
           ))}
         </View>
