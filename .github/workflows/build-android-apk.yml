@@ -1,0 +1,62 @@
+name: Build & Release Android APK
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix apps/mobile ci
+
+      - name: Prebuild Expo Native Android Project
+        run: |
+          cd apps/mobile
+          npx expo prebuild --platform android --clean
+
+      - name: Build Android Release APK
+        run: |
+          cd apps/mobile/android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Locate APK File
+        run: |
+          mkdir -p build_output
+          cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk build_output/shafaq.apk || cp apps/mobile/android/app/build/outputs/apk/release/*.apk build_output/shafaq.apk
+
+      - name: Create & Upload GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: build_output/shafaq.apk
+          name: "إصدار شَفَق الأندرويد ${{ github.ref_name }}"
+          draft: false
+          prerelease: false
+          body: |
+            تحديث جديد لتطبيق شَفَق (Shafaq Android App) 🚀
+            
+            يمكنك تحميل ملف الـ APK وتثبيته مباشرة على جهاز الأندرويد.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

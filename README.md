@@ -1,8 +1,21 @@
-# Shafaq
+# 📱 شَفَق (Shafaq) — Android App Direct Download
 
-Shafaq is a pharmacy delivery and pharmacist consultation platform. This repository contains the React Native mobile app and the NestJS backend in one monorepo.
+[![Download Shafaq APK](https://img.shields.io/badge/Download-Shafaq%20Android%20APK-19A9CC?style=for-the-badge&logo=android&logoColor=white)](https://github.com/JAWA/shafaq-monorepo/releases/latest)
 
-## Repository structure
+> **تحميل تطبيق شَفَق للرعاية الطبية والصيدلانية المباشر للأندرويد**  
+> يمكنك تنزيل ملف الـ APK وتثبيته مباشرة على جهازك دون الحاجة لمتجر تطبيقات.
+
+### 📥 روابط التنزيل المباشر (Direct Download Links):
+- **رابط التحميل المباشر للـ APK:** [تحميل تطبيق شَفَق (shafaq.apk)](https://github.com/JAWA/shafaq-monorepo/releases/latest/download/shafaq.apk)
+- **صفحة جميع الإصدارات والتحديثات:** [GitHub Releases Page](https://github.com/JAWA/shafaq-monorepo/releases)
+
+---
+
+# Shafaq Monorepo
+
+Shafaq (شَفَق) is an Arabic-first digital healthcare, pharmacy delivery, and medical consultation platform. This repository contains the React Native mobile app and the NestJS backend in one monorepo.
+
+## Repository Structure
 
 ```text
 apps/
@@ -16,7 +29,7 @@ apps/
 - PostgreSQL for the server
 - Android Studio, Xcode, or Expo Go when running the mobile app on a device or simulator
 
-## Install dependencies
+## Install Dependencies
 
 Install dependencies in each application:
 
@@ -25,7 +38,7 @@ npm install --prefix apps/server
 npm install --prefix apps/mobile
 ```
 
-## Run from the repository root
+## Run from the Repository Root
 
 Start the backend in watch mode:
 
@@ -63,7 +76,7 @@ npm run server:prisma:migrate
 
 Configure the server environment using `apps/server/.env` (see the server documentation for the required database and authentication settings). Do not commit secrets; `.env.example` files are allowed by the repository `.gitignore`.
 
-## Development checks
+## Development Checks
 
 Before committing changes, run the checks for the area you changed. For mobile work, run both lint and TypeScript typechecking from `apps/mobile`:
 
