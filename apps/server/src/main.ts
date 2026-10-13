@@ -6,7 +6,10 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
 
 async function bootstrap() {
-  console.log('BOOTSTRAP: Starting Shafaq API server on Railway...');
+  const rawPort = process.env.PORT;
+  const port = rawPort ? parseInt(rawPort, 10) : 3000;
+
+  console.log(`BOOTSTRAP: Initializing Shafaq API server on port ${port}...`);
 
   const app = await NestFactory.create(AppModule);
 
@@ -20,11 +23,8 @@ async function bootstrap() {
     }),
   );
 
-  const rawPort = process.env.PORT;
-  const port = rawPort ? parseInt(rawPort, 10) : 3000;
-
   await app.listen(port, '0.0.0.0');
-  console.log(`BOOTSTRAP: Shafaq API successfully listening on port ${port} (0.0.0.0)`);
+  console.log(`BOOTSTRAP: Shafaq API is successfully listening on http://0.0.0.0:${port}`);
 }
 
 bootstrap().catch((err) => {
