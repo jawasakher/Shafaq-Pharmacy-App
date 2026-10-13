@@ -16,7 +16,12 @@ export class PrismaService
     }
 
     async onModuleInit() {
-        await this.$connect();
+        try {
+            await this.$connect();
+        } catch (error) {
+            console.error('Prisma connection warning during startup:', error);
+            // Allow app to start even if DB is temporarily unreachable
+        }
     }
 
     async onModuleDestroy() {
