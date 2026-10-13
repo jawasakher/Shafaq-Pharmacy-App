@@ -15,8 +15,8 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('should return health check and greeting message', () => {
+      expect(appController.getHello()).toContain('Shafaq Healthcare API Service is running successfully');
     });
   });
 });
