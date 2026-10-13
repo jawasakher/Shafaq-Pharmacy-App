@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { BrandLogo } from '@/components/ui/brand-logo';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
@@ -15,8 +16,7 @@ export default function RoleSelectionScreen() {
         >
           {/* Brand Header */}
           <View style={styles.header}>
-            <ThemedText style={styles.appName}>شَفَق</ThemedText>
-            <ThemedText style={styles.brandSubtitle}>نورُ الرعاية الطبية</ThemedText>
+            <BrandLogo size="large" />
           </View>
 
           {/* Role Cards: المستخدم -> الصيدلية -> خدمة التوصيل */}
@@ -101,22 +101,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 40,
     paddingVertical: 12,
-  },
-  appName: {
-    fontSize: 52,
-    fontWeight: '900',
-    color: '#19A9CC',
-    letterSpacing: 1,
-    textAlign: 'center',
-    lineHeight: 72,
-    paddingVertical: 4,
-  },
-  brandSubtitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#087EA4',
-    textAlign: 'center',
-    marginTop: 4,
   },
   rolesContainer: {
     gap: 16,
