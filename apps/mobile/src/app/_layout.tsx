@@ -41,6 +41,7 @@ export default function RootLayout() {
                 <Stack.Screen name="medicine-request" />
                 <Stack.Screen name="prescription" />
                 <Stack.Screen name="delivery-location" />
+                <Stack.Screen name="update" />
             </Stack>
         </ThemeProvider>
     );

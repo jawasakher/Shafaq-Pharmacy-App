@@ -10,6 +10,7 @@ import { OrdersModule } from './orders/orders.module.js';
 import { PharmacyModule } from './pharmacy/pharmacy.module.js';
 import { PrescriptionModule } from './prescription/prescription.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { UpdatesModule } from './updates/updates.module.js';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     DeliveryModule,
     ConsultationModule,
     AdminModule,
+    UpdatesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
