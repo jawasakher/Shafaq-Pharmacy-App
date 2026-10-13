@@ -7,6 +7,11 @@ export class AppController {
 
   @Get()
   getHello(): string {
-    return this.appService.getHello();
+    return 'Shafaq Healthcare API Service is running successfully 🚀';
+  }
+
+  @Get('health')
+  healthCheck() {
+    return { status: 'ok', timestamp: new Date().toISOString() };
   }
 }
