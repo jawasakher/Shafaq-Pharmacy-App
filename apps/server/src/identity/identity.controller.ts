@@ -315,13 +315,20 @@ export class IdentityController {
 
   @UseGuards(IdentityGuard)
   @Post('auth/logout')
-  async logout(@Headers('authorization') authorization?: string) {
+  async logout(@Req() request: { user: { id: string } }, @Headers('authorization') authorization?: string) {
     const token = authorization?.startsWith('Bearer ')
       ? authorization.slice('Bearer '.length).trim()
       : '';
 
     if (token) {
       await this.sessions.revoke(token);
+      try {
+        await this.prisma.deviceToken.deleteMany({
+          where: { userId: request.user.id }
+        });
+      } catch {
+        // Safe to ignore if no tokens
+      }
     }
 
     return {
