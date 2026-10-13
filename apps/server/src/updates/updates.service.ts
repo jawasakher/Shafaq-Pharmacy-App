@@ -10,11 +10,36 @@ export class UpdatesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getLatestRelease(platform: string = 'android', currentVersion: string = '1.0.0') {
-    // Determine release dynamically based on GitHub API in a real implementation.
-    // Here we provide the validated baseline release info:
-    const latestVersion = '1.0.5';
-    const versionCode = 5;
-    const minSupportedVersion = '1.0.0';
+    let latestVersion = '1.0.6';
+    let versionCode = 6;
+    let minSupportedVersion = '1.0.0';
+    let artifactUrl = 'https://github.com/jawasakher/Shafaq-Pharmacy-App/releases/latest/download/shafaq.apk';
+    let sha256 = '06631908ef574080cb9c9485083f25956a4a2e3c92218acbb8a600319e1275d1';
+    let artifactSize = 112388821;
+    let publishedAt = '2026-10-13T14:10:43Z';
+    let releaseNotes = 'تحديث جديد لتطبيق شَفَق. تم إصلاح نظام الإشعارات وتأكيد الموثوقية التقنية للنسخة.';
+
+    try {
+      // Dynamically fetch authoritative release metadata from GitHub
+      const res = await fetch('https://api.github.com/repos/jawasakher/Shafaq-Pharmacy-App/releases/latest');
+      if (res.ok) {
+        const data = await res.json();
+        const apkAsset = data.assets?.find((a: any) => a.name === 'shafaq.apk');
+
+        if (data.tag_name && apkAsset && apkAsset.state === 'uploaded') {
+          latestVersion = data.tag_name.replace('v', '');
+          artifactUrl = apkAsset.browser_download_url;
+          artifactSize = apkAsset.size;
+          publishedAt = data.published_at;
+
+          if (apkAsset.digest && apkAsset.digest.startsWith('sha256:')) {
+            sha256 = apkAsset.digest.replace('sha256:', '');
+          }
+        }
+      }
+    } catch {
+      this.logger.warn('Failed to fetch dynamic release info, using verified v1.0.6 fallback data.');
+    }
 
     const isMandatory = compareVersions(currentVersion, minSupportedVersion) < 0;
     const hasUpdate = compareVersions(currentVersion, latestVersion) < 0;
@@ -26,10 +51,11 @@ export class UpdatesService {
       versionCode,
       hasUpdate,
       mandatory: isMandatory,
-      releaseNotes: 'تحديث جديد لتطبيق شَفَق. تم إضافة نظام الإشعارات والتحديثات التلقائية المباشرة لتحسين أداء وتجربة التطبيق.',
-      artifactUrl: 'https://github.com/jawasakher/Shafaq-Pharmacy-App/releases/latest/download/shafaq.apk',
-      sha256: 'VERIFY_DOWNLOADED_CHECKSUM',
-      publishedAt: new Date().toISOString(),
+      releaseNotes,
+      artifactUrl,
+      sha256,
+      artifactSize,
+      publishedAt,
     };
   }
 
