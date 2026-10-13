@@ -212,8 +212,21 @@ model User {
   chatMessagesSent            ChatMessage[]
   notifications               Notification[]
   auditLogs                   AuditLog[]                      @relation("AuditActor")
+  deviceTokens                DeviceToken[]
 
   @@index([role])
+}
+
+model DeviceToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  platform  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model OtpChallenge {
