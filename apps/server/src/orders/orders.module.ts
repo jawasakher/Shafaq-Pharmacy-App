@@ -19,5 +19,9 @@ import { OrderStateService } from './order-state.service.js';
         OrderStateService,
         DeliveryPricingService,
     ],
+    exports: [
+        OrdersService,
+        OrderStateService,
+    ],
 })
 export class OrdersModule {}

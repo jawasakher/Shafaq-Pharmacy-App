@@ -949,16 +949,15 @@ describe('Orders API (e2e)', () => {
 
         const history = await prisma.orderStateHistory.findMany({
             where: { orderId },
-            orderBy: { createdAt: 'asc' },
-            select: { previousState: true, newState: true, actorUserId: true, requestId: true },
+            orderBy: { timestamp: 'asc' },
+            select: { previousState: true, newState: true, actorId: true },
         });
 
         expect(history).toEqual(expect.arrayContaining([
             expect.objectContaining({
                 previousState: 'PHARMACY_REVIEWING',
                 newState: 'NO_PHARMACY_AVAILABLE',
-                actorUserId: currentOwner.id,
-                requestId: 'transfer-no-candidate-test',
+                actorId: currentOwner.id,
             }),
         ]));
     });

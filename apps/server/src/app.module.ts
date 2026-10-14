@@ -11,6 +11,7 @@ import { PharmacyModule } from './pharmacy/pharmacy.module.js';
 import { PrescriptionModule } from './prescription/prescription.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { UpdatesModule } from './updates/updates.module.js';
+import { PaymentsModule } from './payments/payments.module.js';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { UpdatesModule } from './updates/updates.module.js';
     ConsultationModule,
     AdminModule,
     UpdatesModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
