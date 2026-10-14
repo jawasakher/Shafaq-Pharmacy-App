@@ -15,6 +15,7 @@ import { PrimaryButton } from '@/components/ui/primary-button';
 import { SecondaryButton } from '@/components/ui/secondary-button';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { ShafaqCard } from '@/components/ui/shafaq-card';
+import { BrandLogo } from '@/components/ui/brand-logo';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { saveSession } from '@/lib/auth';
@@ -182,6 +183,9 @@ export default function LoginScreen() {
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
+            <View style={{ marginBottom: 16, alignItems: 'flex-end' }}>
+              <BrandLogo size="small" />
+            </View>
             <ScreenHeader title={`تسجيل دخول ${roleTitle}`} subtitle="نظام المصادقة عبر البريد الإلكتروني ورقم الهاتف" />
 
             <ShafaqCard variant="elevated" style={styles.card}>

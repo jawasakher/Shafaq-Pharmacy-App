@@ -4,11 +4,11 @@
     "slug": "shafaq",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/branding/shafaq-icon-1024.png",
     "scheme": "shafaq",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/branding/shafaq-icon-1024.png"
     },
     "android": {
       "package": "com.shafaq.mobile",
@@ -22,10 +22,9 @@
         "ACCESS_COARSE_LOCATION"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#DDF6FC",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/branding/shafaq-emblem.png",
+        "monochromeImage": "./assets/branding/shafaq-emblem-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
     },
@@ -38,9 +37,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#F4FCFE",
+          "image": "./assets/branding/shafaq-splash-logo.png",
+          "imageWidth": 120
         }
       ]
     ],

@@ -10,6 +10,7 @@ import {
 import { router } from 'expo-router';
 
 import { logout } from '@/lib/auth';
+import { BrandEmblem } from '@/components/ui/brand-logo';
 
 const menuItems = [
   {
@@ -92,7 +93,7 @@ export default function AccountScreen() {
 
         <View style={styles.profileCard}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>ش</Text>
+            <BrandEmblem size={28} color="#087EA4" />
           </View>
 
           <View style={styles.profileInfo}>

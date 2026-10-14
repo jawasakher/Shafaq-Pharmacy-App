@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { BrandLogo } from '@/components/ui/brand-logo';
 
 const ADDRESS_KEY = '@shafaq_address';
 
@@ -45,19 +46,7 @@ export default function HomeScreen() {
           >
             {/* Header */}
             <View style={styles.header}>
-              <View style={styles.headerText}>
-                <ThemedText style={styles.greeting}>
-                  أهلًا بك في
-                </ThemedText>
-
-                <ThemedText style={styles.appName}>
-                  شَفَق
-                </ThemedText>
-
-                <ThemedText style={styles.brandSubtitle}>
-                  نورُ الرعاية
-                </ThemedText>
-              </View>
+              <BrandLogo size="small" />
 
               <Pressable
                 onPress={() => router.push('/notifications')}
