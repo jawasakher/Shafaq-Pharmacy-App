@@ -11,6 +11,7 @@ import {
   UnauthorizedException,
   Headers,
 } from '@nestjs/common';
+import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
 import * as crypto from 'crypto';
 
@@ -88,7 +89,7 @@ export class UpdatesController {
   @HttpCode(HttpStatus.OK)
   async handleGitHubWebhook(
     @Headers('x-hub-signature-256') signature: string,
-    @Body() body: any,
+    @Req() req: RawBodyRequest<Request>,
   ) {
     const secret = process.env.GITHUB_WEBHOOK_SECRET;
     if (!secret) {
@@ -98,15 +99,23 @@ export class UpdatesController {
       throw new UnauthorizedException('Missing signature');
     }
 
-    // Verify HMAC signature
-    const hmac = crypto.createHmac('sha256', secret);
-    // Note: To be perfectly safe, you'd verify against raw body.
-    // Here we stringify the parsed body as a best-effort if raw body isn't available.
-    const digest = 'sha256=' + hmac.update(JSON.stringify(body)).digest('hex');
+    const raw = req.rawBody;
+    if (!raw) {
+      throw new UnauthorizedException('Missing raw body');
+    }
 
-    if (signature !== digest) {
+    // Verify HMAC signature using raw body
+    const hmac = crypto.createHmac('sha256', secret);
+    const digest = 'sha256=' + hmac.update(raw).digest('hex');
+
+    const signatureBuffer = Buffer.from(signature, 'utf8');
+    const digestBuffer = Buffer.from(digest, 'utf8');
+
+    if (signatureBuffer.length !== digestBuffer.length || !crypto.timingSafeEqual(signatureBuffer, digestBuffer)) {
       throw new UnauthorizedException('Invalid signature');
     }
+
+    const body = req.body;
 
     if (body.action === 'published' && body.release) {
       const version = body.release.tag_name;

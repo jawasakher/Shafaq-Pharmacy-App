@@ -11,7 +11,7 @@ async function bootstrap() {
 
   console.log(`BOOTSTRAP: Initializing Shafaq API server on port ${port}...`);
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   app.enableCors();
 
