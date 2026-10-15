@@ -19,7 +19,7 @@ export async function cleanupOldApks() {
       if (!dir) continue;
       const files = await FileSystem.readDirectoryAsync(dir);
       for (const file of files) {
-        if (file.endsWith('.apk')) {
+        if (file.startsWith('shafaq-update-') && file.endsWith('.apk')) {
           await FileSystem.deleteAsync(`${dir}${file}`, { idempotent: true }).catch(() => {});
         }
       }
@@ -54,7 +54,7 @@ export async function checkGitHubUpdates(repoOwnerAndName: string = 'JAWA/shafaq
         tagName: data.tag_name,
         name: data.name || `تحديث جديد ${data.tag_name}`,
         body: data.body || 'يتوفر تحديث جديد لتطبيق شَفَق مع تحسينات وإصلاحات جديدة.',
-        apkUrl: apkAsset ? apkAsset.browser_download_url : data.html_url,
+        apkUrl: apkAsset ? apkAsset.browser_download_url : null,
         htmlUrl: data.html_url,
       };
     }

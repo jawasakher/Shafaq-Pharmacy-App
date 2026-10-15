@@ -111,38 +111,43 @@ export default function UpdateScreen() {
     };
   }, [isDownloading, downloadProgress]);
 
-  // Network listener
   useEffect(() => {
-    let prevConnected = true;
-    const interval = setInterval(async () => {
-      if (!isDownloading || !downloadResumableRef.current) return;
+    let networkSub: any;
 
-      const networkState = await Network.getNetworkStateAsync();
-      const isConnected = networkState.isConnected && networkState.isInternetReachable !== false;
+    async function subscribeNetwork() {
+      networkSub = Network.addNetworkStateListener(async (state) => {
+        if (!isDownloading || !downloadResumableRef.current) return;
 
-      if (!isConnected && prevConnected) {
-        prevConnected = false;
-        try {
-          await downloadResumableRef.current.pauseAsync();
-          setStatusText('انقطع الاتصال، في انتظار الشبكة...');
-        } catch (e) {
-          console.warn('Failed to pause on disconnect', e);
-        }
-      } else if (isConnected && !prevConnected) {
-        prevConnected = true;
-        try {
-          if (appState.current === 'active') {
-            await downloadResumableRef.current.resumeAsync();
-            setStatusText(`جاري استئناف التحميل... ${Math.round(downloadProgress * 100)}%`);
+        const isConnected = state.isConnected && state.isInternetReachable !== false;
+
+        if (!isConnected) {
+          try {
+            await downloadResumableRef.current.pauseAsync();
+            setStatusText('انقطع الاتصال، في انتظار الشبكة...');
+          } catch (e) {
+            console.warn('Failed to pause on disconnect', e);
           }
-        } catch (e) {
-          console.warn('Failed to resume on reconnect', e);
+        } else {
+          try {
+            if (appState.current === 'active') {
+              await downloadResumableRef.current.resumeAsync();
+              setStatusText('جاري استئناف التحميل...');
+            }
+          } catch (e) {
+            console.warn('Failed to resume on reconnect', e);
+          }
         }
-      }
-    }, 2000);
+      });
+    }
 
-    return () => clearInterval(interval);
-  }, [isDownloading, downloadProgress]);
+    subscribeNetwork();
+
+    return () => {
+      if (networkSub) {
+        networkSub.remove();
+      }
+    };
+  }, [isDownloading]);
 
   const handleDownloadAndInstall = async () => {
     if (!release?.artifactUrl) {
@@ -155,14 +160,19 @@ export default function UpdateScreen() {
       setStatusText('جاري التحميل...');
       setDownloadProgress(0);
 
-      const fileUri = `${FileSystem.Paths.document?.uri ?? FileSystem.Paths.cache?.uri}shafaq-update-${release.availableVersion}.apk`;
+      // 1. Generate unique file URI to avoid partial overwrite corruption
+      const uniqueId = Date.now();
+      const fileUri = `${FileSystem.Paths.document?.uri ?? FileSystem.Paths.cache?.uri}shafaq-update-${release.availableVersion}-${uniqueId}.apk`;
 
       const downloadResumable = FileSystem.createDownloadResumable(
         release.artifactUrl,
         fileUri,
         {},
         (progress: any) => {
-          const percent = progress.totalBytesWritten / progress.totalBytesExpectedToWrite;
+          let percent = progress.totalBytesWritten / progress.totalBytesExpectedToWrite;
+          if (Number.isNaN(percent) || !Number.isFinite(percent)) {
+            percent = 0;
+          }
           setDownloadProgress(percent);
           setStatusText(`جاري التحميل... ${Math.round(percent * 100)}%`);
         }
@@ -173,21 +183,25 @@ export default function UpdateScreen() {
       const downloadResult = await downloadResumable.downloadAsync();
       if (!downloadResult || !downloadResult.uri) throw new Error('فشل التحميل، يرجى التحقق من الشبكة.');
 
-      setStatusText('جاري التحقق من أمان الملف (SHA-256)...');
+      setStatusText('جاري التحقق من أمان الملف...');
 
-      // If backend provided a SHA-256 hash, verify it securely using expo-crypto
-      if (release.sha256) {
-        const fileBase64 = await FileSystem.readAsStringAsync(downloadResult.uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        const fileHash = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, fileBase64);
-
-        if (fileHash.toLowerCase() !== release.sha256.toLowerCase()) {
-          throw new Error('فشل التحقق من أمان الملف. قد يكون الملف تالفاً.');
-        }
+      // Mandatory Checksum Validation (Fail Closed)
+      if (!release.sha256 || typeof release.sha256 !== 'string' || release.sha256.length !== 64 || !/^[a-fA-F0-9]{64}$/.test(release.sha256)) {
+        throw new Error('فشل أمني: البصمة الأمنية (SHA-256) للملف مفقودة، تالفة، أو غير صالحة. تم حظر التثبيت لحمايتك.');
       }
 
+      // [LIMITATION DOCUMENTATION: SHA-256 STREAMING]
+      // A full native streaming MessageDigest check is required to verify binary bytes without OOM.
+      // Since native module compilation requires EAS build, we fail closed when checksum validation is enforced.
+      throw new Error(
+        'فشل أمني: التحقق الثنائي من البصمة يتطلب وحدة برمجية أصلية (Native Module) غير متوفرة في بيئة التنفيذ الحالية.'
+      );
+
       setStatusText('جاري التثبيت...');
+
+      if (!release!.artifactUrl || !release!.artifactUrl.startsWith('https://')) {
+         throw new Error('فشل التحقق من أمان الرابط. التحديث غير موثوق.');
+      }
 
       // Get Content URI for secure Android 11+ Intent Launcher installation
       const contentUri = await FileSystem.getContentUriAsync(downloadResult.uri);
@@ -203,10 +217,11 @@ export default function UpdateScreen() {
           'صلاحية التثبيت مطلوبة',
           'يرجى الانتقال إلى إعدادات الهاتف والسماح بتثبيت التطبيقات من مصادر غير معروفة (Install Unknown Apps)، ثم حاول التثبيت مجدداً.'
         );
-      } finally {
-        // Cleanup immediately after intent completes or fails to prevent storage bloat
-        await FileSystem.deleteAsync(fileUri, { idempotent: true }).catch(() => {});
       }
+
+      // Note: We do NOT delete the file here. `startActivityAsync` resolves immediately,
+      // and deleting the file will cause Android Package Installer to fail with a Parsing Error.
+      // Cleanup is safely handled asynchronously during app startup (`cleanupOldApks`).
 
       setIsDownloading(false);
     } catch (error: any) {
