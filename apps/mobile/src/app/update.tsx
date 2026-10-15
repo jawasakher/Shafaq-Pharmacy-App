@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Alert, StyleSheet, View, ActivityIndicator } from 'react-native';
+import { useEffect, useState, useRef } from 'react';
+import { Alert, StyleSheet, View, ActivityIndicator, AppState, AppStateStatus } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
@@ -7,6 +7,7 @@ import * as FileSystem from 'expo-file-system';
 import * as Crypto from 'expo-crypto';
 import * as IntentLauncher from 'expo-intent-launcher';
 import * as SecureStore from 'expo-secure-store';
+import * as Network from 'expo-network';
 import { ScrollView } from 'react-native-gesture-handler';
 
 import { BrandEmblem } from '@/components/ui/brand-logo';
@@ -34,6 +35,9 @@ export default function UpdateScreen() {
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [statusText, setStatusText] = useState('');
 
+  const downloadResumableRef = useRef<any | null>(null);
+  const appState = useRef(AppState.currentState);
+
   const currentVersion = Constants.expoConfig?.version || '1.0.0';
 
   useEffect(() => {
@@ -48,7 +52,15 @@ export default function UpdateScreen() {
           setRelease(res.data);
         }
       } catch (error) {
-        Alert.alert('خطأ', 'تعذر الاتصال بخادم التحديثات. تأكد من اتصالك بالإنترنت.');
+        // Only set fallback if absolutely necessary to prevent UI crashes
+        setRelease({
+          currentVersion,
+          availableVersion: currentVersion,
+          hasUpdate: false,
+          mandatory: false,
+          releaseNotes: 'تعذر الاتصال بخادم التحديثات. تأكد من اتصالك بالإنترنت.',
+          artifactUrl: '',
+        });
       } finally {
         setLoading(false);
       }
@@ -56,8 +68,87 @@ export default function UpdateScreen() {
     fetchUpdateInfo();
   }, [currentVersion]);
 
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', async (nextAppState: AppStateStatus) => {
+      if (
+        appState.current.match(/active/) &&
+        (nextAppState === 'background' || nextAppState === 'inactive')
+      ) {
+        // App is going to background
+        if (isDownloading && downloadResumableRef.current) {
+          try {
+            await downloadResumableRef.current.pauseAsync();
+            setStatusText('تم إيقاف التحميل مؤقتاً (التطبيق في الخلفية)...');
+          } catch (e) {
+            console.warn('Failed to pause download', e);
+          }
+        }
+      } else if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        // App has come to the foreground
+        if (isDownloading && downloadResumableRef.current) {
+          try {
+            // Check network before resuming
+            const networkState = await Network.getNetworkStateAsync();
+            if (networkState.isConnected && networkState.isInternetReachable !== false) {
+               await downloadResumableRef.current.resumeAsync();
+               setStatusText(`جاري استئناف التحميل... ${Math.round(downloadProgress * 100)}%`);
+            } else {
+               setStatusText('انقطع الاتصال، في انتظار الشبكة...');
+            }
+          } catch (e) {
+            console.warn('Failed to resume download', e);
+          }
+        }
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isDownloading, downloadProgress]);
+
+  // Network listener
+  useEffect(() => {
+    let prevConnected = true;
+    const interval = setInterval(async () => {
+      if (!isDownloading || !downloadResumableRef.current) return;
+
+      const networkState = await Network.getNetworkStateAsync();
+      const isConnected = networkState.isConnected && networkState.isInternetReachable !== false;
+
+      if (!isConnected && prevConnected) {
+        prevConnected = false;
+        try {
+          await downloadResumableRef.current.pauseAsync();
+          setStatusText('انقطع الاتصال، في انتظار الشبكة...');
+        } catch (e) {
+          console.warn('Failed to pause on disconnect', e);
+        }
+      } else if (isConnected && !prevConnected) {
+        prevConnected = true;
+        try {
+          if (appState.current === 'active') {
+            await downloadResumableRef.current.resumeAsync();
+            setStatusText(`جاري استئناف التحميل... ${Math.round(downloadProgress * 100)}%`);
+          }
+        } catch (e) {
+          console.warn('Failed to resume on reconnect', e);
+        }
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [isDownloading, downloadProgress]);
+
   const handleDownloadAndInstall = async () => {
-    if (!release?.artifactUrl) return;
+    if (!release?.artifactUrl) {
+      Alert.alert('خطأ', 'رابط التحديث غير متوفر. يرجى المحاولة لاحقاً.');
+      return;
+    }
 
     try {
       setIsDownloading(true);
@@ -77,8 +168,10 @@ export default function UpdateScreen() {
         }
       );
 
+      downloadResumableRef.current = downloadResumable;
+
       const downloadResult = await downloadResumable.downloadAsync();
-      if (!downloadResult || !downloadResult.uri) throw new Error('Download failed');
+      if (!downloadResult || !downloadResult.uri) throw new Error('فشل التحميل، يرجى التحقق من الشبكة.');
 
       setStatusText('جاري التحقق من أمان الملف (SHA-256)...');
 
