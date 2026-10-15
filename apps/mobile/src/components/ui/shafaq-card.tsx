@@ -25,17 +25,17 @@ export function ShafaqCard({
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 22,
+    borderRadius: 8, // Sharp 8px rounded corners
     padding: 20,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFFFF', // Pure substrate
     borderWidth: 1,
     borderColor: '#D9EEF4',
   },
   elevated: {
-    shadowColor: '#19A9CC',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
+    shadowColor: '#16485C',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
     elevation: 3,
   },
   tinted: {

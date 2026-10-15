@@ -45,7 +45,8 @@
           "image": "./assets/branding/shafaq-splash-logo.png",
           "imageWidth": 120
         }
-      ]
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -97,10 +97,18 @@ export default function UpdateScreen() {
             </View>
 
             <View style={styles.actionGroup}>
-              <PrimaryButton
-                title="تحديث الآن (تحميل APK)"
-                onPress={handleUpdate}
-              />
+              {release?.hasUpdate ? (
+                <PrimaryButton
+                  title="تثبيت التحديث الآن (APK)"
+                  onPress={handleUpdate}
+                />
+              ) : (
+                <PrimaryButton
+                  title="التطبيق محدث"
+                  onPress={() => router.back()}
+                  disabled={true}
+                />
+              )}
 
               {!release?.mandatory && (
                 <SecondaryButton

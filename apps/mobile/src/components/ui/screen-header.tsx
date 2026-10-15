@@ -16,6 +16,8 @@ export function ScreenHeader({ title, subtitle }: { title: string; subtitle?: st
   );
 }
 
+import { Fonts } from '@/constants/theme';
+
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row-reverse',
@@ -30,21 +32,22 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 20,
-    fontWeight: '800',
+    fontFamily: Fonts.mono, // using mono mapped to Tajawal_900Black
     color: '#16485C',
     textAlign: 'right',
   },
   subtitle: {
     fontSize: 13,
+    fontFamily: Fonts.sans,
     color: '#688795',
     textAlign: 'right',
     marginTop: 2,
   },
   backButton: {
     paddingHorizontal: 14,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: '#F0FAFD',
+    height: 48, // Accessibility standard
+    borderRadius: 8,
+    backgroundColor: '#F4FCFE',
     borderWidth: 1,
     borderColor: '#D9EEF4',
     justifyContent: 'center',
@@ -53,7 +56,7 @@ const styles = StyleSheet.create({
   },
   backText: {
     fontSize: 14,
-    fontWeight: '700',
+    fontFamily: Fonts.rounded,
     color: '#16485C',
   },
 });

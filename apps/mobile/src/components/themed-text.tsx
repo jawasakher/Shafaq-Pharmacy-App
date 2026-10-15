@@ -34,40 +34,41 @@ const styles = StyleSheet.create({
   small: {
     fontSize: 14,
     lineHeight: 20,
-    fontWeight: 500,
+    fontFamily: Fonts.sans,
   },
   smallBold: {
     fontSize: 14,
     lineHeight: 20,
-    fontWeight: 700,
+    fontFamily: Fonts.rounded,
   },
   default: {
     fontSize: 16,
     lineHeight: 24,
-    fontWeight: 500,
+    fontFamily: Fonts.serif,
   },
   title: {
     fontSize: 48,
-    fontWeight: 600,
     lineHeight: 52,
+    fontFamily: Fonts.mono,
   },
   subtitle: {
     fontSize: 32,
     lineHeight: 44,
-    fontWeight: 600,
+    fontFamily: Fonts.rounded,
   },
   link: {
     lineHeight: 30,
     fontSize: 14,
+    fontFamily: Fonts.serif,
   },
   linkPrimary: {
     lineHeight: 30,
     fontSize: 14,
-    color: '#3c87f7',
+    color: '#19A9CC', // Changed to Shafaq Primary Cyan
+    fontFamily: Fonts.rounded,
   },
   code: {
     fontFamily: Fonts.mono,
-    fontWeight: Platform.select({ android: 700 }) ?? 500,
     fontSize: 12,
   },
 });

@@ -39,22 +39,22 @@ export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
 export const Fonts = Platform.select({
   ios: {
-    sans: 'system-ui',
-    serif: 'ui-serif',
-    rounded: 'ui-rounded',
-    mono: 'ui-monospace',
+    sans: 'Tajawal_400Regular',
+    serif: 'Tajawal_500Medium',
+    rounded: 'Tajawal_700Bold',
+    mono: 'Tajawal_900Black',
   },
   default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
+    sans: 'Tajawal_400Regular',
+    serif: 'Tajawal_500Medium',
+    rounded: 'Tajawal_700Bold',
+    mono: 'Tajawal_900Black',
   },
   web: {
-    sans: 'var(--font-display)',
-    serif: 'var(--font-serif)',
-    rounded: 'var(--font-rounded)',
-    mono: 'var(--font-mono)',
+    sans: 'Tajawal_400Regular',
+    serif: 'Tajawal_500Medium',
+    rounded: 'Tajawal_700Bold',
+    mono: 'Tajawal_900Black',
   },
 });
 

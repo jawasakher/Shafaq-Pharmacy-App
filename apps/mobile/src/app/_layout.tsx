@@ -9,12 +9,27 @@ import { verifyServerSession } from '@/lib/auth';
 import { promptUpdateIfAvailable } from '@/lib/updater';
 import { registerForPushNotificationsAsync } from '@/lib/notifications';
 
+import {
+    useFonts,
+    Tajawal_400Regular,
+    Tajawal_500Medium,
+    Tajawal_700Bold,
+    Tajawal_900Black,
+} from '@expo-google-fonts/tajawal';
+
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
     const colorScheme = useColorScheme();
     const notificationListener = useRef<Notifications.Subscription | null>(null);
     const responseListener = useRef<Notifications.Subscription | null>(null);
+
+    const [fontsLoaded, fontError] = useFonts({
+        Tajawal_400Regular,
+        Tajawal_500Medium,
+        Tajawal_700Bold,
+        Tajawal_900Black,
+    });
 
     useEffect(() => {
         async function prepare() {
@@ -24,8 +39,6 @@ export default function RootLayout() {
                 await registerForPushNotificationsAsync();
             } catch {
                 // Ignore initial verification errors
-            } finally {
-                await SplashScreen.hideAsync();
             }
         }
         prepare();
@@ -82,6 +95,17 @@ export default function RootLayout() {
             }
         };
     }, []);
+
+    useEffect(() => {
+        if (fontsLoaded || fontError) {
+            // Ensure splash screen is hidden when fonts are loaded or if there's an error
+            SplashScreen.hideAsync().catch(() => {});
+        }
+    }, [fontsLoaded, fontError]);
+
+    if (!fontsLoaded && !fontError) {
+        return null;
+    }
 
     return (
         <ThemeProvider

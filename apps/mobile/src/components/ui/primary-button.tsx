@@ -25,17 +25,19 @@ export function PrimaryButton({
   );
 }
 
+import { Fonts } from '@/constants/theme';
+
 const styles = StyleSheet.create({
   button: {
-    height: 54,
-    borderRadius: 16,
-    backgroundColor: '#19A9CC',
+    height: 48, // 48px touch target for accessibility
+    borderRadius: 8, // 8px rounded corners as per spec
+    backgroundColor: '#19A9CC', // Primary Cyan
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#19A9CC',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
     elevation: 4,
     paddingHorizontal: 20,
   },
@@ -49,7 +51,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 16,
-    fontWeight: '700',
+    fontFamily: Fonts.rounded,
     color: '#FFFFFF',
     textAlign: 'center',
   },
