@@ -103,7 +103,7 @@ export class UpdatesService {
     }
   }
 
-  async sendReleaseNotification(version: string, releaseNotes: string) {
+  async sendReleaseNotification(version: string, releaseNotes: string, directApkUrl?: string) {
     const devices = await this.prisma.deviceToken.findMany();
 
     if (devices.length === 0) {
@@ -111,12 +111,19 @@ export class UpdatesService {
       return { sent: 0, failures: 0 };
     }
 
+    // Default to the authoritative release URL if no specific APK URL is passed
+    const finalApkUrl = directApkUrl || 'https://github.com/jawasakher/Shafaq-Pharmacy-App/releases/latest/download/shafaq.apk';
+
     const messages: ExpoPushMessage[] = devices.map(device => ({
       to: device.token,
       sound: 'default',
-      title: 'تحديث جديد لتطبيق شفق',
-      body: `الإصدار ${version} متاح الآن: ${releaseNotes}`,
-      data: { type: 'update_available', version },
+      title: 'تحديث جديد متاح 🚀',
+      body: 'تم إطلاق نسخة جديدة من شفق. اضغط هنا للتحديث الآن.',
+      data: {
+        type: 'APP_UPDATE',
+        version,
+        directApkUrl: finalApkUrl
+      },
       channelId: 'app_updates',
     }));
 

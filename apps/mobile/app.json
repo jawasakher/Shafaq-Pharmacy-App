@@ -32,6 +32,10 @@
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+    "updates": {
+      "url": "https://u.expo.dev/c43e6a12-974a-4872-bc4c-f1eb5f0c8372",
+      "fallbackToCacheTimeout": 0
+    },
     "plugins": [
       "expo-router",
       [

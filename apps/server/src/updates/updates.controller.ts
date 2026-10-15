@@ -8,8 +8,11 @@ import {
   Query,
   Req,
   UseGuards,
+  UnauthorizedException,
+  Headers,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import * as crypto from 'crypto';
 
 import { IdentityGuard } from '../identity/identity.guard.js';
 import { InternalIdentityGuard } from '../identity/internal-identity.guard.js';
@@ -79,5 +82,51 @@ export class UpdatesController {
       success: true,
       data,
     };
+  }
+
+  @Post('webhooks/github')
+  @HttpCode(HttpStatus.OK)
+  async handleGitHubWebhook(
+    @Headers('x-hub-signature-256') signature: string,
+    @Body() body: any,
+  ) {
+    const secret = process.env.GITHUB_WEBHOOK_SECRET;
+    if (!secret) {
+      throw new UnauthorizedException('Webhook secret not configured');
+    }
+    if (!signature) {
+      throw new UnauthorizedException('Missing signature');
+    }
+
+    // Verify HMAC signature
+    const hmac = crypto.createHmac('sha256', secret);
+    // Note: To be perfectly safe, you'd verify against raw body.
+    // Here we stringify the parsed body as a best-effort if raw body isn't available.
+    const digest = 'sha256=' + hmac.update(JSON.stringify(body)).digest('hex');
+
+    if (signature !== digest) {
+      throw new UnauthorizedException('Invalid signature');
+    }
+
+    if (body.action === 'published' && body.release) {
+      const version = body.release.tag_name;
+      const releaseNotes = body.release.body || 'تحديث جديد متاح.';
+      let directApkUrl: string | undefined;
+
+      if (body.release.assets && Array.isArray(body.release.assets)) {
+        const apkAsset = body.release.assets.find((a: any) => a.name.endsWith('.apk'));
+        if (apkAsset) {
+          directApkUrl = apkAsset.browser_download_url;
+        }
+      }
+
+      await this.updatesService.sendReleaseNotification(
+        version,
+        releaseNotes,
+        directApkUrl
+      );
+    }
+
+    return { success: true };
   }
 }

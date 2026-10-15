@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import { Alert, Linking } from 'react-native';
+import * as Updates from 'expo-updates';
 
 export type GitHubRelease = {
   tagName: string;
@@ -46,6 +47,28 @@ export async function checkGitHubUpdates(repoOwnerAndName: string = 'JAWA/shafaq
 }
 
 export async function promptUpdateIfAvailable(repoOwnerAndName: string = 'JAWA/shafaq-monorepo') {
+  try {
+    // 1. Silent OTA Update check first
+    if (!__DEV__) {
+      const update = await Updates.checkForUpdateAsync();
+      if (update.isAvailable) {
+        await Updates.fetchUpdateAsync();
+        Alert.alert(
+          'تحديث هوائي 🚀',
+          'تم تحميل تحديثات جديدة لتحسين أداء التطبيق. هل ترغب في إعادة التشغيل لتطبيقها الآن؟',
+          [
+            { text: 'لاحقاً', style: 'cancel' },
+            { text: 'إعادة التشغيل', onPress: () => Updates.reloadAsync() },
+          ]
+        );
+        return; // If OTA is available and downloaded, skip APK prompt
+      }
+    }
+  } catch (e) {
+    console.warn('OTA update check failed:', e);
+  }
+
+  // 2. APK Update check
   const update = await checkGitHubUpdates(repoOwnerAndName);
   if (update && update.apkUrl) {
     Alert.alert(
