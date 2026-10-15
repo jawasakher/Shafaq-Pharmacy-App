@@ -17,6 +17,16 @@ import {
     Tajawal_900Black,
 } from '@expo-google-fonts/tajawal';
 
+import { I18nManager } from 'react-native';
+import * as Updates from 'expo-updates';
+
+// Force RTL layout on first launch
+if (!I18nManager.isRTL) {
+    I18nManager.allowRTL(true);
+    I18nManager.forceRTL(true);
+    Updates.reloadAsync();
+}
+
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
@@ -49,40 +59,8 @@ export default function RootLayout() {
 
         responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
             const data = response.notification.request.content.data;
-            if (data?.type === 'update_available') {
+            if (data?.type === 'update_available' || data?.type === 'APP_UPDATE') {
                 router.push('/update' as any);
-            }
-            if (data?.type === 'APP_UPDATE' && typeof data?.directApkUrl === 'string') {
-                const directApkUrl = data.directApkUrl;
-                import('react-native').then(({ Linking, Alert }) => {
-                    Alert.alert(
-                        'تحديث التطبيق',
-                        'هل ترغب في بدء تحميل النسخة الجديدة الآن؟',
-                        [
-                            { text: 'إلغاء', style: 'cancel' },
-                            {
-                                text: 'نعم',
-                                onPress: () => {
-                                    Linking.canOpenURL(directApkUrl).then((supported) => {
-                                        if (supported) {
-                                            Linking.openURL(directApkUrl);
-                                        } else {
-                                            Alert.alert(
-                                                'خطأ في التحميل',
-                                                'تعذر فتح الرابط المباشر للتحميل. يرجى محاولة التحديث من داخل التطبيق.'
-                                            );
-                                        }
-                                    }).catch(() => {
-                                        Alert.alert(
-                                            'خطأ في التحميل',
-                                            'حدث خطأ أثناء محاولة فتح رابط التحديث.'
-                                        );
-                                    });
-                                },
-                            },
-                        ]
-                    );
-                });
             }
         });
 

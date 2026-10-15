@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Alert, Linking, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
+import * as FileSystem from 'expo-file-system';
+import * as Crypto from 'expo-crypto';
+import * as IntentLauncher from 'expo-intent-launcher';
+import * as SecureStore from 'expo-secure-store';
+import { ScrollView } from 'react-native-gesture-handler';
 
 import { BrandEmblem } from '@/components/ui/brand-logo';
 import { PrimaryButton } from '@/components/ui/primary-button';
@@ -19,13 +24,17 @@ type ReleaseInfo = {
   mandatory: boolean;
   releaseNotes: string;
   artifactUrl: string;
+  sha256?: string;
 };
 
 export default function UpdateScreen() {
   const [release, setRelease] = useState<ReleaseInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [statusText, setStatusText] = useState('');
 
-  const currentVersion = Constants.expoConfig?.version || '1.0.4';
+  const currentVersion = Constants.expoConfig?.version || '1.0.0';
 
   useEffect(() => {
     async function fetchUpdateInfo() {
@@ -38,16 +47,8 @@ export default function UpdateScreen() {
         if (res.success && res.data) {
           setRelease(res.data);
         }
-      } catch {
-        // Fallback default release info if offline
-        setRelease({
-          currentVersion,
-          availableVersion: '1.0.4',
-          hasUpdate: false,
-          mandatory: false,
-          releaseNotes: 'أنت تستخدم أحدث إصدار مستقر من تطبيق شَفَق.',
-          artifactUrl: 'https://github.com/jawasakher/Shafaq-Pharmacy-App/releases/latest',
-        });
+      } catch (error) {
+        Alert.alert('خطأ', 'تعذر الاتصال بخادم التحديثات. تأكد من اتصالك بالإنترنت.');
       } finally {
         setLoading(false);
       }
@@ -55,11 +56,78 @@ export default function UpdateScreen() {
     fetchUpdateInfo();
   }, [currentVersion]);
 
-  const handleUpdate = () => {
-    const url = release?.artifactUrl || 'https://github.com/jawasakher/Shafaq-Pharmacy-App/releases/latest';
-    Linking.openURL(url).catch(() => {
-      Alert.alert('خطأ', 'تعذر فتح رابط التحديث، يرجى زيارة صفحة الإصدارات مباشرة.');
-    });
+  const handleDownloadAndInstall = async () => {
+    if (!release?.artifactUrl) return;
+
+    try {
+      setIsDownloading(true);
+      setStatusText('جاري التحميل...');
+      setDownloadProgress(0);
+
+      const fileUri = `${FileSystem.Paths.document?.uri ?? FileSystem.Paths.cache?.uri}shafaq-update-${release.availableVersion}.apk`;
+
+      const downloadResumable = FileSystem.createDownloadResumable(
+        release.artifactUrl,
+        fileUri,
+        {},
+        (progress: any) => {
+          const percent = progress.totalBytesWritten / progress.totalBytesExpectedToWrite;
+          setDownloadProgress(percent);
+          setStatusText(`جاري التحميل... ${Math.round(percent * 100)}%`);
+        }
+      );
+
+      const downloadResult = await downloadResumable.downloadAsync();
+      if (!downloadResult || !downloadResult.uri) throw new Error('Download failed');
+
+      setStatusText('جاري التحقق من أمان الملف (SHA-256)...');
+
+      // If backend provided a SHA-256 hash, verify it securely using expo-crypto
+      if (release.sha256) {
+        const fileBase64 = await FileSystem.readAsStringAsync(downloadResult.uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        const fileHash = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, fileBase64);
+
+        if (fileHash.toLowerCase() !== release.sha256.toLowerCase()) {
+          throw new Error('فشل التحقق من أمان الملف. قد يكون الملف تالفاً.');
+        }
+      }
+
+      setStatusText('جاري التثبيت...');
+
+      // Get Content URI for secure Android 11+ Intent Launcher installation
+      const contentUri = await FileSystem.getContentUriAsync(downloadResult.uri);
+
+      try {
+        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+          data: contentUri,
+          flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+          type: 'application/vnd.android.package-archive',
+        });
+      } catch (installError) {
+        Alert.alert(
+          'صلاحية التثبيت مطلوبة',
+          'يرجى الانتقال إلى إعدادات الهاتف والسماح بتثبيت التطبيقات من مصادر غير معروفة (Install Unknown Apps)، ثم حاول التثبيت مجدداً.'
+        );
+      } finally {
+        // Cleanup immediately after intent completes or fails to prevent storage bloat
+        await FileSystem.deleteAsync(fileUri, { idempotent: true }).catch(() => {});
+      }
+
+      setIsDownloading(false);
+    } catch (error: any) {
+      setIsDownloading(false);
+      setStatusText('');
+      Alert.alert('خطأ في التحميل', error.message || 'حدث خطأ أثناء تحميل التحديث.');
+    }
+  };
+
+  const handleLater = async () => {
+    if (release?.availableVersion) {
+      await SecureStore.setItemAsync('@shafaq_ignored_update_version', release.availableVersion);
+    }
+    router.back();
   };
 
   return (
@@ -98,10 +166,20 @@ export default function UpdateScreen() {
 
             <View style={styles.actionGroup}>
               {release?.hasUpdate ? (
-                <PrimaryButton
-                  title="تثبيت التحديث الآن (APK)"
-                  onPress={handleUpdate}
-                />
+                isDownloading ? (
+                  <View style={styles.progressContainer}>
+                    <ActivityIndicator size="small" color="#19A9CC" />
+                    <ThemedText style={styles.progressText}>{statusText}</ThemedText>
+                    <View style={styles.progressBarBg}>
+                      <View style={[styles.progressBarFill, { width: `${downloadProgress * 100}%` }]} />
+                    </View>
+                  </View>
+                ) : (
+                  <PrimaryButton
+                    title="تثبيت التحديث الآن"
+                    onPress={handleDownloadAndInstall}
+                  />
+                )
               ) : (
                 <PrimaryButton
                   title="التطبيق محدث"
@@ -110,10 +188,10 @@ export default function UpdateScreen() {
                 />
               )}
 
-              {!release?.mandatory && (
+              {!release?.mandatory && !isDownloading && (
                 <SecondaryButton
                   title="لاحقاً (متابعة الاستخدام)"
-                  onPress={() => router.back()}
+                  onPress={handleLater}
                 />
               )}
             </View>
@@ -230,5 +308,31 @@ const styles = StyleSheet.create({
   },
   actionGroup: {
     gap: 12,
+  },
+  progressContainer: {
+    padding: 16,
+    backgroundColor: '#F0FAFD',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BDE8EF',
+    alignItems: 'center',
+    gap: 8,
+  },
+  progressText: {
+    fontSize: 14,
+    color: '#16485C',
+    fontWeight: '700',
+  },
+  progressBarBg: {
+    height: 6,
+    width: '100%',
+    backgroundColor: '#D9EEF4',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginTop: 4,
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#19A9CC',
   },
 });

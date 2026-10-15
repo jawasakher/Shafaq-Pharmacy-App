@@ -1,6 +1,8 @@
 import Constants from 'expo-constants';
-import { Alert, Linking } from 'react-native';
+import { Alert } from 'react-native';
 import * as Updates from 'expo-updates';
+import * as SecureStore from 'expo-secure-store';
+import * as FileSystem from 'expo-file-system';
 
 export type GitHubRelease = {
   tagName: string;
@@ -9,6 +11,23 @@ export type GitHubRelease = {
   apkUrl: string | null;
   htmlUrl: string;
 };
+
+export async function cleanupOldApks() {
+  try {
+    const dirs = [FileSystem.Paths.document?.uri, FileSystem.Paths.cache?.uri];
+    for (const dir of dirs) {
+      if (!dir) continue;
+      const files = await FileSystem.readDirectoryAsync(dir);
+      for (const file of files) {
+        if (file.endsWith('.apk')) {
+          await FileSystem.deleteAsync(`${dir}${file}`, { idempotent: true }).catch(() => {});
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('APK cleanup failed:', e);
+  }
+}
 
 export async function checkGitHubUpdates(repoOwnerAndName: string = 'JAWA/shafaq-monorepo'): Promise<GitHubRelease | null> {
   try {
@@ -71,15 +90,26 @@ export async function promptUpdateIfAvailable(repoOwnerAndName: string = 'JAWA/s
   // 2. APK Update check
   const update = await checkGitHubUpdates(repoOwnerAndName);
   if (update && update.apkUrl) {
+    const ignoredVersion = await SecureStore.getItemAsync('@shafaq_ignored_update_version');
+    if (ignoredVersion === update.tagName) {
+      return; // Do not nag the user if they already pressed "Later" for this version
+    }
+
     Alert.alert(
       'تحديث جديد متوفر 🚀',
       `${update.body}\n\nالإصدار الجديد: ${update.tagName}`,
       [
-        { text: 'لاحقاً', style: 'cancel' },
         {
-          text: 'تنزيل التحديث الآن',
+          text: 'لاحقاً',
+          style: 'cancel',
+          onPress: async () => {
+            await SecureStore.setItemAsync('@shafaq_ignored_update_version', update.tagName);
+          }
+        },
+        {
+          text: 'مراجعة التحديث',
           onPress: () => {
-            Linking.openURL(update.apkUrl!);
+             import('expo-router').then(({ router }) => router.push('/update' as any));
           },
         },
       ]
