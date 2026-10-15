@@ -30,7 +30,7 @@ jobs:
 
       - name: Install App Dependencies
         working-directory: ./apps/mobile
-        run: npm ci
+        run: npm install
 
       - name: Build APK via Expo EAS
         working-directory: ./apps/mobile
