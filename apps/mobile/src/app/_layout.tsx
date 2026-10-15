@@ -39,6 +39,38 @@ export default function RootLayout() {
             if (data?.type === 'update_available') {
                 router.push('/update' as any);
             }
+            if (data?.type === 'APP_UPDATE' && typeof data?.directApkUrl === 'string') {
+                const directApkUrl = data.directApkUrl;
+                import('react-native').then(({ Linking, Alert }) => {
+                    Alert.alert(
+                        'تحديث التطبيق',
+                        'هل ترغب في بدء تحميل النسخة الجديدة الآن؟',
+                        [
+                            { text: 'إلغاء', style: 'cancel' },
+                            {
+                                text: 'نعم',
+                                onPress: () => {
+                                    Linking.canOpenURL(directApkUrl).then((supported) => {
+                                        if (supported) {
+                                            Linking.openURL(directApkUrl);
+                                        } else {
+                                            Alert.alert(
+                                                'خطأ في التحميل',
+                                                'تعذر فتح الرابط المباشر للتحميل. يرجى محاولة التحديث من داخل التطبيق.'
+                                            );
+                                        }
+                                    }).catch(() => {
+                                        Alert.alert(
+                                            'خطأ في التحميل',
+                                            'حدث خطأ أثناء محاولة فتح رابط التحديث.'
+                                        );
+                                    });
+                                },
+                            },
+                        ]
+                    );
+                });
+            }
         });
 
         return () => {
