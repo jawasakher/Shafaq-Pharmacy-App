@@ -1,13 +1,13 @@
 # 📱 شَفَق (Shafaq) — Android App Direct Download
 
-[![Download Shafaq APK](https://img.shields.io/badge/Download-Shafaq%20Android%20APK-19A9CC?style=for-the-badge&logo=android&logoColor=white)](https://github.com/JAWA/shafaq-monorepo/releases/latest)
+[![Download Shafaq APK](https://img.shields.io/badge/Download-Shafaq%20Android%20APK-19A9CC?style=for-the-badge&logo=android&logoColor=white)](https://github.com/jawasakher/Shafaq-Pharmacy-App/releases/latest)
 
 > **تحميل تطبيق شَفَق للرعاية الطبية والصيدلانية المباشر للأندرويد**  
 > يمكنك تنزيل ملف الـ APK وتثبيته مباشرة على جهازك دون الحاجة لمتجر تطبيقات.
 
 ### 📥 روابط التنزيل المباشر (Direct Download Links):
-- **رابط التحميل المباشر للـ APK:** [تحميل تطبيق شَفَق (shafaq.apk)](https://github.com/JAWA/shafaq-monorepo/releases/latest/download/shafaq.apk)
-- **صفحة جميع الإصدارات والتحديثات:** [GitHub Releases Page](https://github.com/JAWA/shafaq-monorepo/releases)
+- **رابط التحميل المباشر للـ APK:** [تحميل تطبيق شَفَق (shafaq.apk)](https://github.com/jawasakher/Shafaq-Pharmacy-App/releases/latest/download/shafaq.apk)
+- **صفحة جميع الإصدارات والتحديثات:** [GitHub Releases Page](https://github.com/jawasakher/Shafaq-Pharmacy-App/releases)
 
 ---
 
