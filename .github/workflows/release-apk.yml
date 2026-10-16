@@ -1,6 +1,9 @@
 name: Build & Release Shafaq APK
 
 on:
+  push:
+    branches:
+      - migration/server-into-app
   workflow_dispatch:
     inputs:
       release_notes:
@@ -54,10 +57,11 @@ jobs:
         working-directory: ./apps/mobile
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTES: ${{ github.event.inputs.release_notes || github.event.head_commit.message || 'تحديث جديد لتطبيق شَفَق' }}
         run: |
           gh release create ${{ env.TAG_NAME }} shafaq.apk \
             --title "شَفَق ${{ env.TAG_NAME }}" \
-            --notes "${{ github.event.inputs.release_notes }}"
+            --notes "$NOTES"
 
       - name: Cleanup Old Releases (Keep Latest 2)
         env:
@@ -72,11 +76,12 @@ jobs:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           DOWNLOAD_URL: "https://github.com/${{ github.repository }}/releases/download/${{ env.TAG_NAME }}/shafaq.apk"
+          NOTES: ${{ github.event.inputs.release_notes || github.event.head_commit.message || 'تحديث جديد لتطبيق شَفَق' }}
         run: |
           MESSAGE="🚀 <b>تحديث جديد لتطبيق شَفَق متاح الآن</b> 🚀
 
           📦 <b>رقم الإصدار:</b> ${{ env.TAG_NAME }}
-          📝 <b>ملاحظات التحديث:</b> ${{ github.event.inputs.release_notes }}
+          📝 <b>ملاحظات التحديث:</b> $NOTES
 
           🔗 <a href=\"$DOWNLOAD_URL\">اضغط هنا لتحميل التحديث المباشر (APK)</a>"
           
