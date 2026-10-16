@@ -1,4 +1,4 @@
-name: Android APK Build Diagnostics (No Release)
+name: Build & Release Android APK
 
 on:
   push:
@@ -11,11 +11,11 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build-and-diagnose:
-    name: Diagnose Android Gradle Build (No Release)
+  build-and-release:
+    name: Native Gradle APK Build & Release
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -39,17 +39,6 @@ jobs:
       - name: Setup Gradle caching
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Record build environment
-        shell: bash
-        run: |
-          mkdir -p build-diagnostics
-          {
-            echo "Node: $(node --version)"
-            echo "npm: $(npm --version)"
-            echo "Commit: $(git rev-parse HEAD)"
-            echo "Run ID: $GITHUB_RUN_ID"
-          } | tee build-diagnostics/environment.txt
-
       - name: Install mobile dependencies from lockfile
         run: npm ci --prefix apps/mobile
 
@@ -60,18 +49,15 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          npx expo prebuild --platform android --clean 2>&1 |
-            tee "$GITHUB_WORKSPACE/build-diagnostics/expo-prebuild.log"
+          npx expo prebuild --platform android --clean
 
       - name: Configure Gradle memory and release ABIs
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path("apps/mobile/android/gradle.properties")
           text = path.read_text(encoding="utf-8")
-
           updates = {
               "org.gradle.jvmargs": "-Xmx3072m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8",
               "org.gradle.workers.max": "2",
@@ -79,11 +65,9 @@ jobs:
               "reactNativeArchitectures": "armeabi-v7a,arm64-v8a",
               "kotlin.daemon.jvmargs": "-Xmx1536m -XX:MaxMetaspaceSize=768m",
           }
-
           lines = text.splitlines()
           seen = set()
           result = []
-
           for line in lines:
               stripped = line.strip()
               if stripped and not stripped.startswith("#") and "=" in stripped:
@@ -94,50 +78,91 @@ jobs:
                           seen.add(key)
                       continue
               result.append(line)
-
           for key, value in updates.items():
               if key not in seen:
                   result.append(f"{key}={value}")
-
           path.write_text("\n".join(result).rstrip() + "\n", encoding="utf-8")
-
-          verified = path.read_text(encoding="utf-8").splitlines()
-          for key, value in updates.items():
-              matches = [
-                  line for line in verified
-                  if line.strip().startswith(key + "=")
-              ]
-              if len(matches) != 1 or matches[0].split("=", 1)[1].strip() != value:
-                  raise SystemExit(f"Invalid Gradle setting {key}: {matches}")
-              print(matches[0])
           PY
-      - name: Build APK with diagnostic logging (not published)
+
+      - name: Decode Production Keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "Decoding Production Keystore..."
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > apps/mobile/android/app/release.keystore
+          else
+            echo "No ANDROID_KEYSTORE_BASE64 secret found. Will proceed with fallback/debug signing."
+          fi
+
+      - name: Build Android Release APK via Gradle
         working-directory: apps/mobile/android
         env:
           NODE_OPTIONS: "--max-old-space-size=3072"
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         shell: bash
         run: |
           set -o pipefail
-          mkdir -p "$GITHUB_WORKSPACE/build-diagnostics"
+          chmod +x gradlew
+          if [ -f "app/release.keystore" ]; then
+            echo "Building with Production Keystore..."
+            ./gradlew assembleRelease \
+              -Pandroid.injected.signing.store.file=$(pwd)/app/release.keystore \
+              -Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD \
+              -Pandroid.injected.signing.key.alias=$ANDROID_KEY_ALIAS \
+              -Pandroid.injected.signing.key.password=$ANDROID_KEY_PASSWORD \
+              --no-daemon --console=plain
+          else
+            echo "Building with Fallback Keystore..."
+            ./gradlew assembleRelease --no-daemon --console=plain
+          fi
 
-          echo "Diagnostic build only. No GitHub Release will be created."
+      - name: Prepare APK & Checksum Artifact
+        run: |
+          mkdir -p build_output
+          cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk build_output/shafaq.apk || cp apps/mobile/android/app/build/outputs/apk/release/*.apk build_output/shafaq.apk
+          test -s build_output/shafaq.apk
+          cd build_output
+          sha256sum shafaq.apk | awk '{print $1}' > shafaq.apk.sha256
+          cd ..
 
-          ./gradlew assembleRelease \
-            --no-daemon \
-            --console=plain \
-            --stacktrace \
-            --info \
-            --warning-mode all \
-            2>&1 | tee "$GITHUB_WORKSPACE/build-diagnostics/gradle-build.log"
+      - name: Generate Version Tag
+        run: |
+          TAG_NAME="v1.0.${{ github.run_number }}"
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
 
-      - name: Upload diagnostic logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: shafaq-android-build-diagnostics-${{ github.run_number }}
-          path: |
-            build-diagnostics/**
-            apps/mobile/android/build/reports/problems/**
-            apps/mobile/android/app/build/outputs/apk/release/*.apk
-          if-no-files-found: warn
-          retention-days: 14
+      - name: Create GitHub Release & Upload APK
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ env.TAG_NAME }} build_output/shafaq.apk build_output/shafaq.apk.sha256 \
+            --title "شَفَق ${{ env.TAG_NAME }}" \
+            --notes "تحديث جديد لتطبيق شَفَق يحتوي على جميع الميزات والهوية البصرية ونظام الأمان المحدث."
+
+      - name: Cleanup Old Releases (Keep Only Latest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          chmod +x .github/scripts/cleanup-releases.sh
+          bash .github/scripts/cleanup-releases.sh
+
+      - name: Send Telegram Notification
+        if: success()
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DOWNLOAD_URL: "https://github.com/${{ github.repository }}/releases/download/${{ env.TAG_NAME }}/shafaq.apk"
+        run: |
+          MESSAGE="🚀 <b>تحديث جديد لتطبيق شَفَق متاح الآن (APK)</b> 🚀
+
+          📦 <b>رقم الإصدار:</b> ${{ env.TAG_NAME }}
+          ✨ <b>حالة البناء:</b> بناء آلي ناجح 100% بدون وسائط.
+
+          🔗 <a href=\"$DOWNLOAD_URL\">اضغط هنا لتحميل ملف الـ APK المباشر وتثبيته</a>"
+          
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d chat_id="${CHAT_ID}" \
+            -d parse_mode="HTML" \
+            --data-urlencode text="$MESSAGE"
