@@ -63,6 +63,54 @@ jobs:
           npx expo prebuild --platform android --clean 2>&1 |
             tee "$GITHUB_WORKSPACE/build-diagnostics/expo-prebuild.log"
 
+      - name: Configure Gradle memory and release ABIs
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("apps/mobile/android/gradle.properties")
+          text = path.read_text(encoding="utf-8")
+
+          updates = {
+              "org.gradle.jvmargs": "-Xmx3072m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8",
+              "org.gradle.workers.max": "2",
+              "org.gradle.parallel": "false",
+              "reactNativeArchitectures": "armeabi-v7a,arm64-v8a",
+              "kotlin.daemon.jvmargs": "-Xmx1536m -XX:MaxMetaspaceSize=768m",
+          }
+
+          lines = text.splitlines()
+          seen = set()
+          result = []
+
+          for line in lines:
+              stripped = line.strip()
+              if stripped and not stripped.startswith("#") and "=" in stripped:
+                  key = stripped.split("=", 1)[0].strip()
+                  if key in updates:
+                      if key not in seen:
+                          result.append(f"{key}={updates[key]}")
+                          seen.add(key)
+                      continue
+              result.append(line)
+
+          for key, value in updates.items():
+              if key not in seen:
+                  result.append(f"{key}={value}")
+
+          path.write_text("\n".join(result).rstrip() + "\n", encoding="utf-8")
+
+          verified = path.read_text(encoding="utf-8").splitlines()
+          for key, value in updates.items():
+              matches = [
+                  line for line in verified
+                  if line.strip().startswith(key + "=")
+              ]
+              if len(matches) != 1 or matches[0].split("=", 1)[1].strip() != value:
+                  raise SystemExit(f"Invalid Gradle setting {key}: {matches}")
+              print(matches[0])
+          PY
       - name: Build APK with diagnostic logging (not published)
         working-directory: apps/mobile/android
         env:
@@ -90,5 +138,6 @@ jobs:
           path: |
             build-diagnostics/**
             apps/mobile/android/build/reports/problems/**
+            apps/mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
           retention-days: 14
