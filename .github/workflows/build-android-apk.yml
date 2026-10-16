@@ -2,9 +2,18 @@ name: Build & Release Android APK
 
 on:
   push:
+    branches:
+      - migration/server-into-app
     tags:
       - 'v*.*.*'
+    paths:
+      - 'apps/mobile/**'
+      - 'package.json'
+      - '.github/workflows/build-android-apk.yml'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-android:
@@ -44,6 +53,22 @@ jobs:
         run: |
           mkdir -p build_output
           cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk build_output/shafaq.apk || cp apps/mobile/android/app/build/outputs/apk/release/*.apk build_output/shafaq.apk
+          test -s build_output/shafaq.apk
+
+      - name: Validate APK and calculate SHA-256
+        run: |
+          unzip -t build_output/shafaq.apk
+          sha256sum build_output/shafaq.apk | tee build_output/shafaq.apk.sha256
+
+      - name: Upload downloadable APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shafaq-apk-${{ github.run_number }}
+          path: |
+            build_output/shafaq.apk
+            build_output/shafaq.apk.sha256
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Create & Upload GitHub Release
         uses: softprops/action-gh-release@v1
