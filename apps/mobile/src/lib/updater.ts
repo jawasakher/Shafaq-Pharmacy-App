@@ -29,7 +29,7 @@ export async function cleanupOldApks() {
   }
 }
 
-export async function checkGitHubUpdates(repoOwnerAndName: string = 'JAWA/shafaq-monorepo'): Promise<GitHubRelease | null> {
+export async function checkGitHubUpdates(repoOwnerAndName: string = 'jawasakher/Shafaq-Pharmacy-App'): Promise<GitHubRelease | null> {
   try {
     const currentVersion = Constants.expoConfig?.version || '1.0.0';
     const response = await fetch(`https://api.github.com/repos/${repoOwnerAndName}/releases/latest`, {
@@ -65,7 +65,7 @@ export async function checkGitHubUpdates(repoOwnerAndName: string = 'JAWA/shafaq
   }
 }
 
-export async function promptUpdateIfAvailable(repoOwnerAndName: string = 'JAWA/shafaq-monorepo') {
+export async function promptUpdateIfAvailable(repoOwnerAndName: string = 'jawasakher/Shafaq-Pharmacy-App') {
   try {
     // 1. Silent OTA Update check first
     if (!__DEV__) {
