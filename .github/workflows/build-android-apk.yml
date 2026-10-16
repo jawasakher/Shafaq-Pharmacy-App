@@ -1,9 +1,6 @@
 name: Build & Release Android APK
 
 on:
-  push:
-    branches:
-      - migration/server-into-app
   workflow_dispatch:
 
 concurrency:
