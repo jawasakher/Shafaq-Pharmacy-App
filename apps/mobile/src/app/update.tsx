@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import * as FileSystem from 'expo-file-system';
-import * as Crypto from 'expo-crypto';
+import { File } from 'expo-file-system';
 import * as IntentLauncher from 'expo-intent-launcher';
 import * as SecureStore from 'expo-secure-store';
 import * as Network from 'expo-network';
@@ -150,8 +150,8 @@ export default function UpdateScreen() {
   }, [isDownloading]);
 
   const handleDownloadAndInstall = async () => {
-    if (!release?.artifactUrl) {
-      Alert.alert('خطأ', 'رابط التحديث غير متوفر. يرجى المحاولة لاحقاً.');
+    if (!release?.artifactUrl || !release.artifactUrl.startsWith('https://')) {
+      Alert.alert('خطأ أمني', 'رابط التحديث غير متوفر أو غير آمن. تم إيقاف التنزيل.');
       return;
     }
 
@@ -190,14 +190,14 @@ export default function UpdateScreen() {
         throw new Error('فشل أمني: البصمة الأمنية (SHA-256) للملف مفقودة، تالفة، أو غير صالحة. تم حظر التثبيت لحمايتك.');
       }
 
-      // [LIMITATION DOCUMENTATION: SHA-256 STREAMING]
-      // A full native streaming MessageDigest check is required to verify binary bytes without OOM.
-      // Since native module compilation requires EAS build, we fail closed when checksum validation is enforced.
-      throw new Error(
-        'فشل أمني: التحقق الثنائي من البصمة يتطلب وحدة برمجية أصلية (Native Module) غير متوفرة في بيئة التنفيذ الحالية.'
-      );
+      // Hash the APK file natively, without loading the whole APK into JavaScript memory.
+      const apkFile = new File(downloadResult.uri);
+      const actualSha256 = await apkFile.digest('SHA-256');
+      if (actualSha256.toLowerCase() !== release.sha256.toLowerCase()) {
+        throw new Error('فشل أمني: بصمة SHA-256 لا تطابق ملف التحديث. تم حظر التثبيت لحمايتك.');
+      }
 
-      setStatusText('جاري التثبيت...');
+      setStatusText('تم التحقق من سلامة الملف، جاري فتح أداة التثبيت...');
 
       if (!release!.artifactUrl || !release!.artifactUrl.startsWith('https://')) {
          throw new Error('فشل التحقق من أمان الرابط. التحديث غير موثوق.');
