@@ -6,6 +6,10 @@ on:
       - migration/server-into-app
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -29,21 +33,36 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Setup Gradle Caching & Performance
+        uses: gradle/actions/setup-gradle@v3
+
       - name: Install dependencies
         run: |
           npm install
           npm --prefix apps/mobile install
 
       - name: Prebuild Expo Native Android Project
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
         run: |
           cd apps/mobile
           npx expo prebuild --platform android --clean
 
+      - name: Configure Gradle Memory & Properties
+        run: |
+          cd apps/mobile/android
+          echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError" >> gradle.properties
+          echo "org.gradle.daemon=false" >> gradle.properties
+          echo "org.gradle.parallel=false" >> gradle.properties
+          echo "org.gradle.configureondemand=false" >> gradle.properties
+
       - name: Build Android Release APK via Gradle
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
         run: |
           cd apps/mobile/android
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease --no-daemon --console=plain
 
       - name: Prepare APK Artifact
         run: |
