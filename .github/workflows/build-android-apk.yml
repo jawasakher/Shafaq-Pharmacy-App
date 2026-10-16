@@ -63,16 +63,6 @@ jobs:
           npx expo prebuild --platform android --clean 2>&1 |
             tee "$GITHUB_WORKSPACE/build-diagnostics/expo-prebuild.log"
 
-      - name: Configure Gradle memory
-        shell: bash
-        run: |
-          cat >> apps/mobile/android/gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m
-          org.gradle.daemon=false
-          org.gradle.parallel=false
-          org.gradle.configureondemand=false
-          EOF
-
       - name: Build APK with diagnostic logging (not published)
         working-directory: apps/mobile/android
         env:
