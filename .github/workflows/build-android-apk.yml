@@ -4,20 +4,16 @@ on:
   push:
     branches:
       - migration/server-into-app
-    tags:
-      - 'v*.*.*'
-    paths:
-      - 'apps/mobile/**'
-      - 'package.json'
-      - '.github/workflows/build-android-apk.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build-android:
+  build-and-release:
+    name: Native Gradle APK Build & Release
     runs-on: ubuntu-latest
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,7 +23,7 @@ jobs:
         with:
           node-version: 20
 
-      - name: Setup Java JDK
+      - name: Setup Java JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -43,44 +39,53 @@ jobs:
           cd apps/mobile
           npx expo prebuild --platform android --clean
 
-      - name: Build Android Release APK
+      - name: Build Android Release APK via Gradle
         run: |
           cd apps/mobile/android
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
 
-      - name: Locate APK File
+      - name: Prepare APK Artifact
         run: |
           mkdir -p build_output
           cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk build_output/shafaq.apk || cp apps/mobile/android/app/build/outputs/apk/release/*.apk build_output/shafaq.apk
           test -s build_output/shafaq.apk
 
-      - name: Validate APK and calculate SHA-256
+      - name: Generate Version Tag
         run: |
-          unzip -t build_output/shafaq.apk
-          sha256sum build_output/shafaq.apk | tee build_output/shafaq.apk.sha256
+          TAG_NAME="v1.0.${{ github.run_number }}"
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
 
-      - name: Upload downloadable APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: shafaq-apk-${{ github.run_number }}
-          path: |
-            build_output/shafaq.apk
-            build_output/shafaq.apk.sha256
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Create & Upload GitHub Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: build_output/shafaq.apk
-          name: "إصدار شَفَق الأندرويد ${{ github.ref_name }}"
-          draft: false
-          prerelease: false
-          body: |
-            تحديث جديد لتطبيق شَفَق (Shafaq Android App) 🚀
-            
-            يمكنك تحميل ملف الـ APK وتثبيته مباشرة على جهاز الأندرويد.
+      - name: Create GitHub Release & Upload APK
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ env.TAG_NAME }} build_output/shafaq.apk \
+            --title "شَفَق ${{ env.TAG_NAME }}" \
+            --notes "تحديث تلقائي جديد لتطبيق شَفَق يحتوي على جميع الميزات والهوية البصرية ونظام الأمان المحدث."
+
+      - name: Cleanup Old Releases (Keep Only Latest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          chmod +x .github/scripts/cleanup-releases.sh
+          bash .github/scripts/cleanup-releases.sh
+
+      - name: Send Telegram Notification
+        if: success()
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DOWNLOAD_URL: "https://github.com/${{ github.repository }}/releases/download/${{ env.TAG_NAME }}/shafaq.apk"
+        run: |
+          MESSAGE="🚀 <b>تحديث جديد لتطبيق شَفَق متاح الآن (APK)</b> 🚀
+
+          📦 <b>رقم الإصدار:</b> ${{ env.TAG_NAME }}
+          ✨ <b>حالة البناء:</b> بناء آلي ناجح 100% بدون وسائط.
+
+          🔗 <a href=\"$DOWNLOAD_URL\">اضغط هنا لتحميل ملف الـ APK المباشر وتثبيته</a>"
+          
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d chat_id="${CHAT_ID}" \
+            -d parse_mode="HTML" \
+            --data-urlencode text="$MESSAGE"
