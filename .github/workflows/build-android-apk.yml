@@ -1,6 +1,9 @@
 name: Build & Release Android APK
 
 on:
+  push:
+    branches:
+      - migration/server-into-app
   workflow_dispatch:
 
 concurrency:
@@ -40,7 +43,7 @@ jobs:
 
       - name: Prebuild Expo Native Android Project
         env:
-          NODE_OPTIONS: "--max-old-space-size=4096"
+          NODE_OPTIONS: "--max-old-space-size=2048"
         run: |
           cd apps/mobile
           npx expo prebuild --platform android --clean
@@ -48,24 +51,27 @@ jobs:
       - name: Configure Gradle Memory & Properties
         run: |
           cd apps/mobile/android
-          echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError" >> gradle.properties
+          echo "org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m" >> gradle.properties
           echo "org.gradle.daemon=false" >> gradle.properties
           echo "org.gradle.parallel=false" >> gradle.properties
           echo "org.gradle.configureondemand=false" >> gradle.properties
 
       - name: Build Android Release APK via Gradle
         env:
-          NODE_OPTIONS: "--max-old-space-size=4096"
+          NODE_OPTIONS: "--max-old-space-size=2048"
         run: |
           cd apps/mobile/android
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon --console=plain
 
-      - name: Prepare APK Artifact
+      - name: Prepare APK & Checksum Artifact
         run: |
           mkdir -p build_output
           cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk build_output/shafaq.apk || cp apps/mobile/android/app/build/outputs/apk/release/*.apk build_output/shafaq.apk
           test -s build_output/shafaq.apk
+          cd build_output
+          sha256sum shafaq.apk | awk '{print $1}' > shafaq.apk.sha256
+          cd ..
 
       - name: Generate Version Tag
         run: |
@@ -76,7 +82,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create ${{ env.TAG_NAME }} build_output/shafaq.apk \
+          gh release create ${{ env.TAG_NAME }} build_output/shafaq.apk build_output/shafaq.apk.sha256 \
             --title "شَفَق ${{ env.TAG_NAME }}" \
             --notes "تحديث تلقائي جديد لتطبيق شَفَق يحتوي على جميع الميزات والهوية البصرية ونظام الأمان المحدث."
 

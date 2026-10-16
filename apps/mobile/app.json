@@ -2,7 +2,7 @@
   "expo": {
     "name": "شَفَق",
     "slug": "shafaq",
-    "version": "1.0.0",
+    "version": "1.0.7",
     "orientation": "portrait",
     "icon": "./assets/branding/shafaq-icon-1024.png",
     "scheme": "shafaq",
@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.shafaq.mobile",
-      "versionCode": 1,
+      "versionCode": 7,
       "permissions": [
         "INTERNET",
         "CAMERA",

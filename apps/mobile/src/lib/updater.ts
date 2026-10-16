@@ -117,7 +117,7 @@ export async function promptUpdateIfAvailable(repoOwnerAndName: string = 'jawasa
   }
 }
 
-function isNewerVersion(current: string, latest: string): boolean {
+export function isNewerVersion(current: string, latest: string): boolean {
   const cParts = current.split('.').map((p) => parseInt(p, 10) || 0);
   const lParts = latest.split('.').map((p) => parseInt(p, 10) || 0);
 
@@ -129,4 +129,24 @@ function isNewerVersion(current: string, latest: string): boolean {
   }
 
   return false;
+}
+
+export function validateChecksumFormat(sha256: string | undefined | null): boolean {
+  if (!sha256 || typeof sha256 !== 'string' || sha256.length !== 64 || !/^[a-fA-F0-9]{64}$/.test(sha256)) {
+    return false;
+  }
+  return true;
+}
+
+export function validateReleaseContract(release: { availableVersion?: string; artifactUrl?: string | null; sha256?: string }) {
+  if (!release.availableVersion || typeof release.availableVersion !== 'string' || release.availableVersion.trim() === '') {
+    throw new Error('Malformed version string');
+  }
+  if (!release.artifactUrl) {
+    throw new Error('Missing APK asset');
+  }
+  if (!validateChecksumFormat(release.sha256)) {
+    throw new Error('Missing or malformed checksum');
+  }
+  return true;
 }

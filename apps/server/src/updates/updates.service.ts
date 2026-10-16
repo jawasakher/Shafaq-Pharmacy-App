@@ -14,10 +14,10 @@ export class UpdatesService {
     let versionCode = 6;
     let minSupportedVersion = '1.0.0';
     let artifactUrl = 'https://github.com/jawasakher/Shafaq-Pharmacy-App/releases/latest/download/shafaq.apk';
-    let sha256 = '06631908ef574080cb9c9485083f25956a4a2e3c92218acbb8a600319e1275d1';
-    let artifactSize = 112388821;
-    let publishedAt = '2026-10-13T14:10:43Z';
-    let releaseNotes = 'تحديث جديد لتطبيق شَفَق. تم إصلاح نظام الإشعارات وتأكيد الموثوقية التقنية للنسخة.';
+    let sha256: string | undefined = undefined;
+    let artifactSize = 0;
+    let publishedAt = new Date().toISOString();
+    let releaseNotes = 'تحديث جديد لتطبيق شَفَق.';
 
     try {
       // Dynamically fetch authoritative release metadata from GitHub
@@ -25,20 +25,29 @@ export class UpdatesService {
       if (res.ok) {
         const data = await res.json();
         const apkAsset = data.assets?.find((a: any) => a.name === 'shafaq.apk');
+        const sha256Asset = data.assets?.find((a: any) => a.name === 'shafaq.apk.sha256');
 
         if (data.tag_name && apkAsset && apkAsset.state === 'uploaded') {
           latestVersion = data.tag_name.replace('v', '');
           artifactUrl = apkAsset.browser_download_url;
           artifactSize = apkAsset.size;
           publishedAt = data.published_at;
+          releaseNotes = data.body || releaseNotes;
 
-          if (apkAsset.digest && apkAsset.digest.startsWith('sha256:')) {
-            sha256 = apkAsset.digest.replace('sha256:', '');
+          if (sha256Asset && sha256Asset.state === 'uploaded') {
+             try {
+               const shaRes = await fetch(sha256Asset.browser_download_url);
+               if (shaRes.ok) {
+                 sha256 = (await shaRes.text()).trim();
+               }
+             } catch (e) {
+               this.logger.warn('Failed to fetch sha256 asset content');
+             }
           }
         }
       }
     } catch {
-      this.logger.warn('Failed to fetch dynamic release info, using verified v1.0.6 fallback data.');
+      this.logger.warn('Failed to fetch dynamic release info, using fallback data.');
     }
 
     const isMandatory = compareVersions(currentVersion, minSupportedVersion) < 0;

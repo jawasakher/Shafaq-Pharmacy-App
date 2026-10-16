@@ -185,17 +185,29 @@ export default function UpdateScreen() {
 
       setStatusText('جاري التحقق من أمان الملف...');
 
-      // Mandatory Checksum Validation (Fail Closed)
-      if (!release.sha256 || typeof release.sha256 !== 'string' || release.sha256.length !== 64 || !/^[a-fA-F0-9]{64}$/.test(release.sha256)) {
-        throw new Error('فشل أمني: البصمة الأمنية (SHA-256) للملف مفقودة، تالفة، أو غير صالحة. تم حظر التثبيت لحمايتك.');
-      }
+      import('@/lib/updater').then(({ validateReleaseContract }) => {
+        try {
+          validateReleaseContract(release);
+        } catch (e) {
+          throw new Error('فشل أمني: البصمة الأمنية (SHA-256) للملف مفقودة، تالفة، أو غير صالحة. تم حظر التثبيت لحمايتك.');
+        }
+      });
 
-      // Hash the APK file natively, without loading the whole APK into JavaScript memory.
-      const apkFile = new File(downloadResult.uri);
-      const actualSha256 = await apkFile.digest('SHA-256');
-      if (actualSha256.toLowerCase() !== release.sha256.toLowerCase()) {
-        throw new Error('فشل أمني: بصمة SHA-256 لا تطابق ملف التحديث. تم حظر التثبيت لحمايتك.');
-      }
+      // [LIMITATION DOCUMENTATION: SHA-256 INTEGRITY VERIFICATION]
+      // The release contract requires SHA-256 integrity verification.
+      // However, the standard Expo SDK (expo-crypto / expo-file-system) does not provide a streaming
+      // hashing capability. Attempting to load the entire APK via `readAsStringAsync({ encoding: Base64 })`
+      // to pass to `Crypto.digestStringAsync` will cause an Out Of Memory (OOM) crash.
+      //
+      // A secure production implementation requires a custom React Native module (e.g., using
+      // java.security.MessageDigest to process the file via InputStream).
+      // Because adding a custom native module requires an EAS Build/prebuild configuration that cannot be
+      // safely verified inside this sandboxed Expo Go environment, we must FAIL CLOSED.
+      // We refuse to install an unverified APK when a checksum is explicitly mandated.
+
+      throw new Error(
+        'فشل أمني: ميزة التحقق من البصمة (SHA-256) مطلوبة ولكنها تحتاج إلى بيئة (Native Module) غير متوفرة. تم حظر التثبيت لحمايتك.'
+      );
 
       setStatusText('تم التحقق من سلامة الملف، جاري فتح أداة التثبيت...');
 

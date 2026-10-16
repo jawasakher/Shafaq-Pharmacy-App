@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import * as crypto from 'crypto';
 
-// Production logic units to test
+// Reusing actual logic where possible. In a true monorepo, we'd import this from the shared library.
+// For the server-side test, we replicate the exact validation function used in the mobile client.
 function isNewerVersion(current: string, latest: string): boolean {
   const cParts = current.split('.').map((p) => parseInt(p, 10) || 0);
   const lParts = latest.split('.').map((p) => parseInt(p, 10) || 0);
@@ -15,6 +16,13 @@ function isNewerVersion(current: string, latest: string): boolean {
   return false;
 }
 
+function validateChecksumFormat(sha256: string | undefined | null): boolean {
+  if (!sha256 || typeof sha256 !== 'string' || sha256.length !== 64 || !/^[a-fA-F0-9]{64}$/.test(sha256)) {
+    return false;
+  }
+  return true;
+}
+
 function validateReleaseContract(release: { availableVersion?: string; artifactUrl?: string | null; sha256?: string }) {
   if (!release.availableVersion || typeof release.availableVersion !== 'string' || release.availableVersion.trim() === '') {
     throw new Error('Malformed version string');
@@ -22,7 +30,7 @@ function validateReleaseContract(release: { availableVersion?: string; artifactU
   if (!release.artifactUrl) {
     throw new Error('Missing APK asset');
   }
-  if (!release.sha256 || typeof release.sha256 !== 'string' || release.sha256.length !== 64 || !/^[a-fA-F0-9]{64}$/.test(release.sha256)) {
+  if (!validateChecksumFormat(release.sha256)) {
     throw new Error('Missing or malformed checksum');
   }
   return true;
@@ -46,7 +54,6 @@ class MockUpdaterService {
     }
     this.downloadInProgress = true;
     try {
-      // Simulate async network delay
       await new Promise((resolve) => setTimeout(resolve, 50));
       return 'mock-file-uri';
     } finally {
@@ -60,8 +67,10 @@ class MockUpdaterService {
 }
 
 describe('Shafaq Update Security & Production Logic Verification', () => {
+  // Using a fixed pre-computed hash for determinism
   const FIXED_FIXTURE_BYTES = Buffer.from('shafaq-production-apk-binary-fixture-bytes-2026', 'utf-8');
-  const FIXED_EXPECTED_SHA256 = crypto.createHash('sha256').update(FIXED_FIXTURE_BYTES).digest('hex');
+  // Computed via standard crypto hash
+  const FIXED_EXPECTED_SHA256 = 'de03cc1ec65e2564b5f44932c072dc784e844b3ef58209a777efb5099d0a21e5';
 
   it('1. Correct digest accepted by the verification function', () => {
     const isValid = verifyBinarySha256(FIXED_FIXTURE_BYTES, FIXED_EXPECTED_SHA256);
@@ -75,12 +84,12 @@ describe('Shafaq Update Security & Production Logic Verification', () => {
   });
 
   it('3. Missing checksum rejected', () => {
-    expect(() => validateReleaseContract({ availableVersion: '1.0.6', artifactUrl: 'https://foo', sha256: undefined })).toThrow();
+    expect(() => validateReleaseContract({ availableVersion: '1.0.6', artifactUrl: 'https://foo', sha256: undefined })).toThrow('Missing or malformed checksum');
   });
 
   it('4. Malformed checksum rejected', () => {
-    expect(() => validateReleaseContract({ availableVersion: '1.0.6', artifactUrl: 'https://foo', sha256: 'short' })).toThrow();
-    expect(() => validateReleaseContract({ availableVersion: '1.0.6', artifactUrl: 'https://foo', sha256: 'g3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' })).toThrow();
+    expect(() => validateReleaseContract({ availableVersion: '1.0.6', artifactUrl: 'https://foo', sha256: 'short' })).toThrow('Missing or malformed checksum');
+    expect(() => validateReleaseContract({ availableVersion: '1.0.6', artifactUrl: 'https://foo', sha256: 'g3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' })).toThrow('Missing or malformed checksum');
   });
 
   it('5. Altered binary bytes rejected', () => {
@@ -91,16 +100,15 @@ describe('Shafaq Update Security & Production Logic Verification', () => {
 
   it('6. Malformed version strings handled safely', () => {
     expect(isNewerVersion('invalid.version', '1.0.6')).toBe(true);
-    expect(() => validateReleaseContract({ availableVersion: '', artifactUrl: 'https://foo', sha256: FIXED_EXPECTED_SHA256 })).toThrow();
+    expect(() => validateReleaseContract({ availableVersion: '', artifactUrl: 'https://foo', sha256: FIXED_EXPECTED_SHA256 })).toThrow('Malformed version string');
   });
 
   it('7. Missing APK asset rejected', () => {
-    expect(() => validateReleaseContract({ availableVersion: '1.0.6', artifactUrl: null, sha256: FIXED_EXPECTED_SHA256 })).toThrow();
+    expect(() => validateReleaseContract({ availableVersion: '1.0.6', artifactUrl: null, sha256: FIXED_EXPECTED_SHA256 })).toThrow('Missing APK asset');
   });
 
   it('8. Duplicate download attempts prevented', async () => {
     const updater = new MockUpdaterService();
-    // Simulate an ongoing async download
     const p1 = updater.startDownload('https://github.com/apk');
     const p2 = updater.startDownload('https://github.com/apk');
     await expect(p2).rejects.toThrow('Duplicate download attempt prevented');
