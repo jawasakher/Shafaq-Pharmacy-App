@@ -5,6 +5,15 @@ on:
     branches:
       - migration/server-into-app
   workflow_dispatch:
+    inputs:
+      release_channel:
+        description: "Choose Preview for a test pre-release or Production for a fully production-signed release."
+        required: true
+        type: choice
+        options:
+          - preview
+          - production
+        default: preview
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -18,6 +27,8 @@ jobs:
     name: Native Gradle APK Build & Release
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      RELEASE_CHANNEL: ${{ github.event_name == 'workflow_dispatch' && inputs.release_channel || 'production' }}
 
     steps:
       - name: Checkout repository
@@ -58,20 +69,30 @@ jobs:
             echo "::error::android.versionCode must be a positive integer; got '$VERSION_CODE'."
             exit 1
           fi
+          if [[ "$RELEASE_CHANNEL" != "preview" && "$RELEASE_CHANNEL" != "production" ]]; then
+            echo "::error::Unsupported release channel '$RELEASE_CHANNEL'."
+            exit 1
+          fi
 
-          TAG_NAME="v$VERSION"
+          if [[ "$RELEASE_CHANNEL" == "preview" ]]; then
+            TAG_NAME="v${VERSION}-preview.${GITHUB_RUN_NUMBER}"
+          else
+            TAG_NAME="v$VERSION"
+          fi
+
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            echo "::error::Release $TAG_NAME already exists. Bump app.json version and android.versionCode before publishing."
+            echo "::error::Release $TAG_NAME already exists. Use a new run or bump the app version."
             exit 1
           fi
           if git ls-remote --tags origin "refs/tags/$TAG_NAME" | grep -q .; then
-            echo "::error::Git tag $TAG_NAME already exists. Choose a new app version before publishing."
+            echo "::error::Git tag $TAG_NAME already exists. Use a unique release tag."
             exit 1
           fi
 
-          LATEST_TAG="$(gh release list --limit 1 --json tagName --jq '.[0].tagName // ""')"
-          if [[ "$LATEST_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
-            CURRENT_VERSION="$VERSION" LATEST_TAG="$LATEST_TAG" node <<'NODE'
+          if [[ "$RELEASE_CHANNEL" == "production" ]]; then
+            LATEST_TAG="$(gh release list --limit 100 --json tagName,isPrerelease --jq '[.[] | select(.isPrerelease == false) | .tagName] | .[0] // ""')"
+            if [[ "$LATEST_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+              CURRENT_VERSION="$VERSION" LATEST_TAG="$LATEST_TAG" node <<'NODE'
           const parse = value => value.replace(/^v/, "").split(".").map(Number);
           const current = parse(process.env.CURRENT_VERSION);
           const latest = parse(process.env.LATEST_TAG);
@@ -83,17 +104,17 @@ jobs:
             }
           }
           if (comparison <= 0) {
-            console.error(`App version ${process.env.CURRENT_VERSION} must be newer than latest release ${process.env.LATEST_TAG}.`);
+            console.error(`Production app version ${process.env.CURRENT_VERSION} must be newer than latest production release ${process.env.LATEST_TAG}.`);
             process.exit(1);
           }
           NODE
+            fi
           fi
 
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "ANDROID_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
           echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_ENV"
-          echo "Validated app version $VERSION, versionCode $VERSION_CODE, release tag $TAG_NAME."
-
+          echo "Validated $RELEASE_CHANNEL channel, app version $VERSION, versionCode $VERSION_CODE, release tag $TAG_NAME."
       - name: Setup Gradle caching
         uses: gradle/actions/setup-gradle@v3
 
@@ -211,7 +232,7 @@ jobs:
           path.write_text("\n".join(result).rstrip() + "\n", encoding="utf-8")
           PY
 
-      - name: Validate production signing credentials
+      - name: Validate signing credentials for selected channel
         shell: bash
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -221,23 +242,42 @@ jobs:
         run: |
           set -euo pipefail
           KEYSTORE_PATH="$RUNNER_TEMP/shafaq-production.keystore"
-          if [[ -n "${ANDROID_KEYSTORE_BASE64:-}" ]]; then
-            echo "Production secrets found. Validating and decoding..."
-            if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"; then
-              echo "::error::ANDROID_KEYSTORE_BASE64 is not valid Base64."
+          PRESENT_COUNT=0
+          for value in "${ANDROID_KEYSTORE_BASE64:-}" "${ANDROID_KEYSTORE_PASSWORD:-}" "${ANDROID_KEY_ALIAS:-}" "${ANDROID_KEY_PASSWORD:-}"; do
+            [[ -n "$value" ]] && PRESENT_COUNT=$((PRESENT_COUNT + 1))
+          done
+
+          if [[ "$PRESENT_COUNT" -eq 0 ]]; then
+            if [[ "$RELEASE_CHANNEL" == "production" ]]; then
+              echo "::error::Production signing secrets are required for a production release. No Debug-key fallback is allowed."
               exit 1
             fi
-            if [[ ! -s "$KEYSTORE_PATH" ]]; then
-              echo "::error::Decoded production keystore is empty."
-              exit 1
-            fi
-            echo "KEYSTORE_AVAILABLE=true" >> $GITHUB_ENV
-            echo "SHAFAQ_KEYSTORE_PATH=$KEYSTORE_PATH" >> $GITHUB_ENV
-          else
-            echo "::warning::Production Keystore secrets are missing. Falling back to Debug Keystore."
-            echo "KEYSTORE_AVAILABLE=false" >> $GITHUB_ENV
+            echo "::warning::No signing secrets configured. This will be a Debug-signed Preview pre-release only."
+            echo "KEYSTORE_AVAILABLE=false" >> "$GITHUB_ENV"
+            exit 0
           fi
 
+          if [[ "$PRESENT_COUNT" -ne 4 ]]; then
+            echo "::error::Signing secrets are only partially configured. Set all four secrets or remove them all for Preview-only builds."
+            exit 1
+          fi
+
+          if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not valid Base64."
+            exit 1
+          fi
+          if [[ ! -s "$KEYSTORE_PATH" ]]; then
+            echo "::error::Decoded production keystore is empty."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$KEYSTORE_PATH" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::Keystore password or key alias validation failed."
+            exit 1
+          fi
+
+          echo "KEYSTORE_AVAILABLE=true" >> "$GITHUB_ENV"
+          echo "SHAFAQ_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          echo "Signing keystore decoded and alias validated."
       - name: Build Android Release APK via Gradle
         working-directory: apps/mobile/android
         env:
@@ -258,7 +298,11 @@ jobs:
               -Pandroid.injected.signing.key.password="$ANDROID_KEY_PASSWORD" \
               --no-daemon --console=plain --stacktrace
           else
-            echo "Building Preview Release with Fallback/Debug Keystore..."
+            if [[ "$RELEASE_CHANNEL" != "preview" ]]; then
+              echo "::error::Refusing to build without the production signing keystore outside Preview channel."
+              exit 1
+            fi
+            echo "::warning::Building a Debug-signed Preview APK. It must not be treated as a production release."
             ./gradlew assembleRelease --no-daemon --console=plain --stacktrace
           fi
 
@@ -270,17 +314,17 @@ jobs:
           test -s build_output/shafaq.apk
           sha256sum build_output/shafaq.apk | awk '{print $1}' > build_output/shafaq.apk.sha256
 
-      - name: Verify APK checksum and production signature
+      - name: Verify APK checksum and signing certificate
         shell: bash
         env:
-          SHAFAQ_KEYSTORE_PATH: ${{ runner.temp }}/shafaq-production.keystore
+          SHAFAQ_KEYSTORE_PATH: ${{ env.SHAFAQ_KEYSTORE_PATH }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           set -euo pipefail
           EXPECTED_SHA256="$(cat build_output/shafaq.apk.sha256)"
           ACTUAL_SHA256="$(sha256sum build_output/shafaq.apk | awk '{print $1}')"
-          if [[ "$EXPECTED_SHA256" != "$ACTUAL_SHA256" ]]; then
+          if [[ -z "$EXPECTED_SHA256" || "$EXPECTED_SHA256" != "$ACTUAL_SHA256" ]]; then
             echo "::error::Local APK checksum verification failed."
             exit 1
           fi
@@ -293,22 +337,36 @@ jobs:
           fi
           "$APKSIGNER" verify --verbose --print-certs build_output/shafaq.apk > "$RUNNER_TEMP/apksigner-verification.txt" 2>&1
 
-          EXPECTED_CERT_SHA256="$(keytool -exportcert -keystore "$SHAFAQ_KEYSTORE_PATH" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" | sha256sum | awk '{print toupper($1)}')"
-          ACTUAL_CERT_SHA256="$(sed -nE 's/.*certificate SHA-256 digest: ([[:xdigit:]]+).*/\1/p' "$RUNNER_TEMP/apksigner-verification.txt" | head -n 1 | tr '[:lower:]' '[:upper:]')"
-          if [[ -z "$ACTUAL_CERT_SHA256" || "$EXPECTED_CERT_SHA256" != "$ACTUAL_CERT_SHA256" ]]; then
-            echo "::error::APK certificate fingerprint does not match the production keystore alias."
-            exit 1
+          if [[ "$KEYSTORE_AVAILABLE" == "true" ]]; then
+            EXPECTED_CERT_SHA256="$(keytool -exportcert -keystore "$SHAFAQ_KEYSTORE_PATH" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" | sha256sum | awk '{print toupper($1)}')"
+            ACTUAL_CERT_SHA256="$(sed -nE 's/.*certificate SHA-256 digest: ([[:xdigit:]]+).*/\1/p' "$RUNNER_TEMP/apksigner-verification.txt" | head -n 1 | tr '[:lower:]' '[:upper:]')"
+            if [[ -z "$ACTUAL_CERT_SHA256" || "$EXPECTED_CERT_SHA256" != "$ACTUAL_CERT_SHA256" ]]; then
+              echo "::error::APK certificate fingerprint does not match the configured keystore alias."
+              exit 1
+            fi
+            echo "Verified APK checksum, Android signature, and configured signing certificate."
+          else
+            if [[ "$RELEASE_CHANNEL" != "preview" ]]; then
+              echo "::error::A production release cannot be published without production-certificate verification."
+              exit 1
+            fi
+            echo "::warning::APK checksum and Android signature structure verified; production certificate comparison is unavailable for this Preview build."
           fi
-          echo "Verified APK checksum and production signing certificate."
-
       - name: Create GitHub Release & Upload APK
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          gh release create "$TAG_NAME" build_output/shafaq.apk build_output/shafaq.apk.sha256 \
-            --title "شَفَق $TAG_NAME" \
-            --notes "تحديث جديد لتطبيق شَفَق يحتوي على الميزات والهوية البصرية وتحديثات الأمان."
+          if [[ "$RELEASE_CHANNEL" == "preview" ]]; then
+            gh release create "$TAG_NAME" build_output/shafaq.apk build_output/shafaq.apk.sha256 \
+              --prerelease \
+              --title "شَفَق $TAG_NAME (Preview)" \
+              --notes "نسخة تجريبية للاختبار فقط. قد تكون موقعة بمفتاح Debug إذا لم تُضبط أسرار توقيع الإنتاج. لا تستخدم كتحديث إنتاجي."
+          else
+            gh release create "$TAG_NAME" build_output/shafaq.apk build_output/shafaq.apk.sha256 \
+              --title "شَفَق $TAG_NAME" \
+              --notes "إصدار إنتاجي تم التحقق من بصمة APK وشهادة توقيعه."
+          fi
 
       - name: Verify published GitHub Release assets
         env:
@@ -337,7 +395,7 @@ jobs:
           echo "Verified GitHub Release $TAG_NAME and both uploaded assets."
 
       - name: Send Telegram Notification
-        if: success()
+        if: success() && (github.event_name != 'workflow_dispatch' || inputs.release_channel == 'production')
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -362,7 +420,7 @@ jobs:
           printf '%s' "$RESPONSE" | python3 -c "import json,sys; payload=json.load(sys.stdin); assert payload.get('ok') is True, payload.get('description', 'Telegram API rejected the message'); print('Telegram API confirmed the notification.')"
 
       - name: Cleanup Old Releases (Keep Only Latest)
-        if: success()
+        if: success() && (github.event_name != 'workflow_dispatch' || inputs.release_channel == 'production')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
