@@ -394,7 +394,7 @@ jobs:
           echo "Verified GitHub Release $TAG_NAME and both uploaded assets."
 
       - name: Send Telegram Notification
-        if: success() && (github.event_name != 'workflow_dispatch' || inputs.release_channel == 'production')
+        if: success()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -403,8 +403,8 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "${BOT_TOKEN:-}" || -z "${CHAT_ID:-}" ]]; then
-            echo "::error::Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID; the published release was not announced."
-            exit 1
+            echo "::warning::Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID; skipping Telegram announcement for this build."
+            exit 0
           fi
 
           MESSAGE="🚀 <b>تحديث جديد لتطبيق شَفَق متاح الآن (APK)</b> 🚀
