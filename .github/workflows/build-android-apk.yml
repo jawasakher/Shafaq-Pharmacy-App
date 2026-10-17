@@ -51,6 +51,13 @@ jobs:
           set -o pipefail
           npx expo prebuild --platform android --clean
 
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27b
+          add-to-path: false
+
       - name: Configure Gradle memory and release ABIs
         shell: bash
         run: |
@@ -83,6 +90,9 @@ jobs:
                   result.append(f"{key}={value}")
           path.write_text("\n".join(result).rstrip() + "\n", encoding="utf-8")
           PY
+          
+          # Force the specific NDK version requested by the build 
+          echo "ndk.dir=${{ steps.setup-ndk.outputs.ndk-path }}" >> apps/mobile/android/local.properties
 
       - name: Decode Production Keystore
         env:
@@ -128,9 +138,12 @@ jobs:
           sha256sum shafaq.apk | awk '{print $1}' > shafaq.apk.sha256
           cd ..
 
-      - name: Generate Version Tag
+      - name: Extract App Version
+        id: app_version
         run: |
-          TAG_NAME="v1.0.${{ github.run_number }}"
+          VERSION=$(node -e "console.log(require('./apps/mobile/app.json').expo.version)")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          TAG_NAME="v$VERSION-b${{ github.run_number }}"
           echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
 
       - name: Create GitHub Release & Upload APK
