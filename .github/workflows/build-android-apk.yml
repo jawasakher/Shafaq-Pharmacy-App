@@ -36,6 +36,64 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Validate release version and prevent duplicate tags
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./apps/mobile/app.json').expo.version")"
+          PACKAGE_VERSION="$(node -p "require('./apps/mobile/package.json').version")"
+          VERSION_CODE="$(node -p "require('./apps/mobile/app.json').expo.android.versionCode")"
+
+          if [[ "$VERSION" != "$PACKAGE_VERSION" ]]; then
+            echo "::error::app.json version ($VERSION) does not match package.json version ($PACKAGE_VERSION)."
+            exit 1
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected app version in MAJOR.MINOR.PATCH format; got '$VERSION'."
+            exit 1
+          fi
+          if [[ ! "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::android.versionCode must be a positive integer; got '$VERSION_CODE'."
+            exit 1
+          fi
+
+          TAG_NAME="v$VERSION"
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "::error::Release $TAG_NAME already exists. Bump app.json version and android.versionCode before publishing."
+            exit 1
+          fi
+          if git ls-remote --tags origin "refs/tags/$TAG_NAME" | grep -q .; then
+            echo "::error::Git tag $TAG_NAME already exists. Choose a new app version before publishing."
+            exit 1
+          fi
+
+          LATEST_TAG="$(gh release list --limit 1 --json tagName --jq '.[0].tagName // ""')"
+          if [[ "$LATEST_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            CURRENT_VERSION="$VERSION" LATEST_TAG="$LATEST_TAG" node <<'NODE'
+          const parse = value => value.replace(/^v/, "").split(".").map(Number);
+          const current = parse(process.env.CURRENT_VERSION);
+          const latest = parse(process.env.LATEST_TAG);
+          let comparison = 0;
+          for (let i = 0; i < 3; i++) {
+            if (current[i] !== latest[i]) {
+              comparison = current[i] > latest[i] ? 1 : -1;
+              break;
+            }
+          }
+          if (comparison <= 0) {
+            console.error(`App version ${process.env.CURRENT_VERSION} must be newer than latest release ${process.env.LATEST_TAG}.`);
+            process.exit(1);
+          }
+          NODE
+          fi
+
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "ANDROID_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_ENV"
+          echo "Validated app version $VERSION, versionCode $VERSION_CODE, release tag $TAG_NAME."
+
       - name: Setup Gradle caching
         uses: gradle/actions/setup-gradle@v3
 
@@ -51,12 +109,74 @@ jobs:
           set -o pipefail
           npx expo prebuild --platform android --clean
 
-      - name: Setup Android NDK
-        uses: nttld/setup-ndk@v1
-        id: setup-ndk
-        with:
-          ndk-version: r27b
-          add-to-path: false
+      - name: Install exact Android NDK versions required by Expo
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [[ -z "$SDK_ROOT" ]]; then
+            echo "::error::ANDROID_SDK_ROOT and ANDROID_HOME are both unset."
+            exit 1
+          fi
+
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(command -v sdkmanager || true)"
+          fi
+          if [[ -z "$SDKMANAGER" || ! -x "$SDKMANAGER" ]]; then
+            echo "::error::Could not locate Android sdkmanager."
+            exit 1
+          fi
+
+          is_valid_ndk() {
+            local target="$1"
+            local expected_version="$2"
+            local revision_file="$target/source.properties"
+            [[ -f "$revision_file" ]] || return 1
+            [[ -x "$target/toolchains/llvm/prebuilt/linux-x86_64/bin/clang" ]] || return 1
+            local actual_version
+            actual_version="$(sed -n 's/^[[:space:]]*Pkg.Revision[[:space:]]*=[[:space:]]*//p' "$revision_file" | head -n 1 | tr -d '\r')"
+            [[ "$actual_version" == "$expected_version" ]]
+          }
+
+          install_ndk_with_retry() {
+            local version="$1"
+            local package="ndk;$version"
+            local target="$SDK_ROOT/ndk/$version"
+            local log="$RUNNER_TEMP/sdkmanager-ndk-${version//./_}.log"
+            local attempt=1
+            while [[ "$attempt" -le 3 ]]; do
+              echo "Installing $package (attempt $attempt/3)."
+              local install_status=0
+              "$SDKMANAGER" --sdk_root="$SDK_ROOT" --install "$package" >"$log" 2>&1 || install_status=$?
+
+              if [[ "$install_status" -eq 0 ]] && is_valid_ndk "$target" "$version"; then
+                echo "Verified $package at $target."
+                return 0
+              fi
+
+              echo "::warning::NDK $version installation attempt $attempt did not produce a verified package."
+              tail -n 35 "$log" || true
+
+              # Delete only this version's directory, and only when it exists but fails the revision/toolchain checks.
+              if [[ -d "$target" ]] && ! is_valid_ndk "$target" "$version"; then
+                echo "Removing incomplete NDK directory for version $version."
+                rm -rf -- "$target"
+              fi
+
+              if [[ "$attempt" -lt 3 ]]; then
+                sleep $((attempt * 5))
+              fi
+              attempt=$((attempt + 1))
+            done
+
+            echo "::error::Could not install and verify $package after 3 attempts."
+            return 1
+          }
+
+          # Android logs show Expo requests both exact revisions in this resolved dependency graph.
+          install_ndk_with_retry "27.0.12077973"
+          install_ndk_with_retry "27.1.12297006"
 
       - name: Configure Gradle memory and release ABIs
         shell: bash
@@ -90,76 +210,135 @@ jobs:
                   result.append(f"{key}={value}")
           path.write_text("\n".join(result).rstrip() + "\n", encoding="utf-8")
           PY
-          
-          # Force the specific NDK version requested by the build 
-          echo "ndk.dir=${{ steps.setup-ndk.outputs.ndk-path }}" >> apps/mobile/android/local.properties
 
-      - name: Decode Production Keystore
+      - name: Validate production signing credentials
+        shell: bash
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "Decoding Production Keystore..."
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > apps/mobile/android/app/release.keystore
-          else
-            echo "No ANDROID_KEYSTORE_BASE64 secret found. Will proceed with fallback/debug signing."
+          set -euo pipefail
+          missing=()
+          [[ -n "${ANDROID_KEYSTORE_BASE64:-}" ]] || missing+=("ANDROID_KEYSTORE_BASE64")
+          [[ -n "${ANDROID_KEYSTORE_PASSWORD:-}" ]] || missing+=("ANDROID_KEYSTORE_PASSWORD")
+          [[ -n "${ANDROID_KEY_ALIAS:-}" ]] || missing+=("ANDROID_KEY_ALIAS")
+          [[ -n "${ANDROID_KEY_PASSWORD:-}" ]] || missing+=("ANDROID_KEY_PASSWORD")
+          if [[ "${#missing[@]}" -gt 0 ]]; then
+            echo "::error::Missing required production-signing secrets: ${missing[*]}. No release will be built or published."
+            exit 1
           fi
+
+          KEYSTORE_PATH="$RUNNER_TEMP/shafaq-production.keystore"
+          if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not valid Base64."
+            exit 1
+          fi
+          if [[ ! -s "$KEYSTORE_PATH" ]]; then
+            echo "::error::Decoded production keystore is empty."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$KEYSTORE_PATH" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::Production keystore, store password, or configured alias is invalid."
+            exit 1
+          fi
+          echo "Validated production keystore and key alias."
+
 
       - name: Build Android Release APK via Gradle
         working-directory: apps/mobile/android
         env:
           NODE_OPTIONS: "--max-old-space-size=3072"
+          SHAFAQ_KEYSTORE_PATH: ${{ runner.temp }}/shafaq-production.keystore
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
           chmod +x gradlew
-          if [ -f "app/release.keystore" ]; then
-            echo "Building with Production Keystore..."
-            ./gradlew assembleRelease \
-              -Pandroid.injected.signing.store.file=$(pwd)/app/release.keystore \
-              -Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD \
-              -Pandroid.injected.signing.key.alias=$ANDROID_KEY_ALIAS \
-              -Pandroid.injected.signing.key.password=$ANDROID_KEY_PASSWORD \
-              --no-daemon --console=plain
-          else
-            echo "Building with Fallback Keystore..."
-            ./gradlew assembleRelease --no-daemon --console=plain
-          fi
+          test -s "$SHAFAQ_KEYSTORE_PATH"
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file="$SHAFAQ_KEYSTORE_PATH" \
+            -Pandroid.injected.signing.store.password="$ANDROID_KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$ANDROID_KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$ANDROID_KEY_PASSWORD" \
+            --no-daemon --console=plain --stacktrace
 
       - name: Prepare APK & Checksum Artifact
         run: |
+          set -euo pipefail
           mkdir -p build_output
-          cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk build_output/shafaq.apk || cp apps/mobile/android/app/build/outputs/apk/release/*.apk build_output/shafaq.apk
+          cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk build_output/shafaq.apk
           test -s build_output/shafaq.apk
-          cd build_output
-          sha256sum shafaq.apk | awk '{print $1}' > shafaq.apk.sha256
-          cd ..
+          sha256sum build_output/shafaq.apk | awk '{print $1}' > build_output/shafaq.apk.sha256
 
-      - name: Extract App Version
-        id: app_version
+      - name: Verify APK checksum and production signature
+        shell: bash
+        env:
+          SHAFAQ_KEYSTORE_PATH: ${{ runner.temp }}/shafaq-production.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
-          VERSION=$(node -e "console.log(require('./apps/mobile/app.json').expo.version)")
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          TAG_NAME="v$VERSION-b${{ github.run_number }}"
-          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+          set -euo pipefail
+          EXPECTED_SHA256="$(cat build_output/shafaq.apk.sha256)"
+          ACTUAL_SHA256="$(sha256sum build_output/shafaq.apk | awk '{print $1}')"
+          if [[ "$EXPECTED_SHA256" != "$ACTUAL_SHA256" ]]; then
+            echo "::error::Local APK checksum verification failed."
+            exit 1
+          fi
+
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          APKSIGNER="$(find "$SDK_ROOT/build-tools" -type f -name apksigner -perm -u+x | sort -V | tail -n 1)"
+          if [[ -z "$APKSIGNER" || ! -x "$APKSIGNER" ]]; then
+            echo "::error::Could not locate Android apksigner."
+            exit 1
+          fi
+          "$APKSIGNER" verify --verbose --print-certs build_output/shafaq.apk > "$RUNNER_TEMP/apksigner-verification.txt" 2>&1
+
+          EXPECTED_CERT_SHA256="$(keytool -exportcert -keystore "$SHAFAQ_KEYSTORE_PATH" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" | sha256sum | awk '{print toupper($1)}')"
+          ACTUAL_CERT_SHA256="$(sed -nE 's/.*certificate SHA-256 digest: ([[:xdigit:]]+).*/\1/p' "$RUNNER_TEMP/apksigner-verification.txt" | head -n 1 | tr '[:lower:]' '[:upper:]')"
+          if [[ -z "$ACTUAL_CERT_SHA256" || "$EXPECTED_CERT_SHA256" != "$ACTUAL_CERT_SHA256" ]]; then
+            echo "::error::APK certificate fingerprint does not match the production keystore alias."
+            exit 1
+          fi
+          echo "Verified APK checksum and production signing certificate."
 
       - name: Create GitHub Release & Upload APK
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create ${{ env.TAG_NAME }} build_output/shafaq.apk build_output/shafaq.apk.sha256 \
-            --title "شَفَق ${{ env.TAG_NAME }}" \
-            --notes "تحديث جديد لتطبيق شَفَق يحتوي على جميع الميزات والهوية البصرية ونظام الأمان المحدث."
+          set -euo pipefail
+          gh release create "$TAG_NAME" build_output/shafaq.apk build_output/shafaq.apk.sha256 \
+            --title "شَفَق $TAG_NAME" \
+            --notes "تحديث جديد لتطبيق شَفَق يحتوي على الميزات والهوية البصرية وتحديثات الأمان."
 
-      - name: Cleanup Old Releases (Keep Only Latest)
+      - name: Verify published GitHub Release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          chmod +x .github/scripts/cleanup-releases.sh
-          bash .github/scripts/cleanup-releases.sh
+          set -euo pipefail
+          ASSETS="$(gh release view "$TAG_NAME" --json assets --jq '.assets[].name')"
+          for required_asset in "shafaq.apk" "shafaq.apk.sha256"; do
+            if ! printf '%s\n' "$ASSETS" | grep -Fxq "$required_asset"; then
+              echo "::error::Published release is missing required asset $required_asset."
+              exit 1
+            fi
+          done
+
+          VERIFY_DIR="$RUNNER_TEMP/release-asset-verification"
+          mkdir -p "$VERIFY_DIR"
+          gh release download "$TAG_NAME" --pattern "shafaq.apk" --dir "$VERIFY_DIR"
+          gh release download "$TAG_NAME" --pattern "shafaq.apk.sha256" --dir "$VERIFY_DIR"
+          LOCAL_SHA256="$(cat build_output/shafaq.apk.sha256)"
+          REMOTE_SHA256_FILE="$(cat "$VERIFY_DIR/shafaq.apk.sha256")"
+          REMOTE_SHA256_ACTUAL="$(sha256sum "$VERIFY_DIR/shafaq.apk" | awk '{print $1}')"
+          if [[ "$LOCAL_SHA256" != "$REMOTE_SHA256_FILE" || "$REMOTE_SHA256_FILE" != "$REMOTE_SHA256_ACTUAL" ]]; then
+            echo "::error::Published APK asset does not match the verified local APK checksum."
+            exit 1
+          fi
+          echo "Verified GitHub Release $TAG_NAME and both uploaded assets."
 
       - name: Send Telegram Notification
         if: success()
@@ -167,15 +346,29 @@ jobs:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           DOWNLOAD_URL: "https://github.com/${{ github.repository }}/releases/download/${{ env.TAG_NAME }}/shafaq.apk"
+        shell: bash
         run: |
+          set -euo pipefail
+          if [[ -z "${BOT_TOKEN:-}" || -z "${CHAT_ID:-}" ]]; then
+            echo "::error::Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID; the published release was not announced."
+            exit 1
+          fi
+
           MESSAGE="🚀 <b>تحديث جديد لتطبيق شَفَق متاح الآن (APK)</b> 🚀
 
-          📦 <b>رقم الإصدار:</b> ${{ env.TAG_NAME }}
-          ✨ <b>حالة البناء:</b> بناء آلي ناجح 100% بدون وسائط.
-
+          📦 <b>الإصدار:</b> ${APP_VERSION}
           🔗 <a href=\"$DOWNLOAD_URL\">اضغط هنا لتحميل ملف الـ APK المباشر وتثبيته</a>"
-          
-          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-            -d chat_id="${CHAT_ID}" \
-            -d parse_mode="HTML" \
-            --data-urlencode text="$MESSAGE"
+
+          RESPONSE="$(curl --fail --silent --show-error --max-time 30 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "parse_mode=HTML" \
+            --data-urlencode "text=$MESSAGE")"
+          printf '%s' "$RESPONSE" | python3 -c "import json,sys; payload=json.load(sys.stdin); assert payload.get('ok') is True, payload.get('description', 'Telegram API rejected the message'); print('Telegram API confirmed the notification.')"
+
+      - name: Cleanup Old Releases (Keep Only Latest)
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          chmod +x .github/scripts/cleanup-releases.sh
+          bash .github/scripts/cleanup-releases.sh
