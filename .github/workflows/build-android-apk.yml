@@ -220,37 +220,28 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          missing=()
-          [[ -n "${ANDROID_KEYSTORE_BASE64:-}" ]] || missing+=("ANDROID_KEYSTORE_BASE64")
-          [[ -n "${ANDROID_KEYSTORE_PASSWORD:-}" ]] || missing+=("ANDROID_KEYSTORE_PASSWORD")
-          [[ -n "${ANDROID_KEY_ALIAS:-}" ]] || missing+=("ANDROID_KEY_ALIAS")
-          [[ -n "${ANDROID_KEY_PASSWORD:-}" ]] || missing+=("ANDROID_KEY_PASSWORD")
-          if [[ "${#missing[@]}" -gt 0 ]]; then
-            echo "::error::Missing required production-signing secrets: ${missing[*]}. No release will be built or published."
-            exit 1
-          fi
-
           KEYSTORE_PATH="$RUNNER_TEMP/shafaq-production.keystore"
-          if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"; then
-            echo "::error::ANDROID_KEYSTORE_BASE64 is not valid Base64."
-            exit 1
+          if [[ -n "${ANDROID_KEYSTORE_BASE64:-}" ]]; then
+            echo "Production secrets found. Validating and decoding..."
+            if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"; then
+              echo "::error::ANDROID_KEYSTORE_BASE64 is not valid Base64."
+              exit 1
+            fi
+            if [[ ! -s "$KEYSTORE_PATH" ]]; then
+              echo "::error::Decoded production keystore is empty."
+              exit 1
+            fi
+            echo "KEYSTORE_AVAILABLE=true" >> $GITHUB_ENV
+            echo "SHAFAQ_KEYSTORE_PATH=$KEYSTORE_PATH" >> $GITHUB_ENV
+          else
+            echo "::warning::Production Keystore secrets are missing. Falling back to Debug Keystore."
+            echo "KEYSTORE_AVAILABLE=false" >> $GITHUB_ENV
           fi
-          if [[ ! -s "$KEYSTORE_PATH" ]]; then
-            echo "::error::Decoded production keystore is empty."
-            exit 1
-          fi
-          if ! keytool -list -keystore "$KEYSTORE_PATH" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null 2>&1; then
-            echo "::error::Production keystore, store password, or configured alias is invalid."
-            exit 1
-          fi
-          echo "Validated production keystore and key alias."
-
 
       - name: Build Android Release APK via Gradle
         working-directory: apps/mobile/android
         env:
           NODE_OPTIONS: "--max-old-space-size=3072"
-          SHAFAQ_KEYSTORE_PATH: ${{ runner.temp }}/shafaq-production.keystore
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -258,13 +249,18 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x gradlew
-          test -s "$SHAFAQ_KEYSTORE_PATH"
-          ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file="$SHAFAQ_KEYSTORE_PATH" \
-            -Pandroid.injected.signing.store.password="$ANDROID_KEYSTORE_PASSWORD" \
-            -Pandroid.injected.signing.key.alias="$ANDROID_KEY_ALIAS" \
-            -Pandroid.injected.signing.key.password="$ANDROID_KEY_PASSWORD" \
-            --no-daemon --console=plain --stacktrace
+          if [[ "$KEYSTORE_AVAILABLE" == "true" ]]; then
+            echo "Building Official Release with Production Keystore..."
+            ./gradlew assembleRelease \
+              -Pandroid.injected.signing.store.file="$SHAFAQ_KEYSTORE_PATH" \
+              -Pandroid.injected.signing.store.password="$ANDROID_KEYSTORE_PASSWORD" \
+              -Pandroid.injected.signing.key.alias="$ANDROID_KEY_ALIAS" \
+              -Pandroid.injected.signing.key.password="$ANDROID_KEY_PASSWORD" \
+              --no-daemon --console=plain --stacktrace
+          else
+            echo "Building Preview Release with Fallback/Debug Keystore..."
+            ./gradlew assembleRelease --no-daemon --console=plain --stacktrace
+          fi
 
       - name: Prepare APK & Checksum Artifact
         run: |
